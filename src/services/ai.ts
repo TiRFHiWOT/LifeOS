@@ -1,0 +1,222 @@
+import { GoogleGenAI, Type } from '@google/genai';
+import { AIInterpretationResult, AIIntent } from '@/types/ai';
+
+export async function interpretNaturalLanguage(
+  prompt: string,
+  referenceDateISO?: string,
+  conversationHistory?: { role: string; text: string }[]
+): Promise<AIInterpretationResult> {
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  const now = referenceDateISO ? new Date(referenceDateISO) : new Date();
+  const currentDateStr = now.toISOString();
+  const dayOfWeek = now.toLocaleDateString('en-US', { weekday: 'long' });
+
+  const systemInstruction = `
+You are the natural language understanding engine for LifeOS, a personal administrative assistant.
+Analyze user inputs and map them to structured intents and parameters.
+
+Current reference time context:
+- Timestamp: ${currentDateStr}
+- Day of week: ${dayOfWeek}
+
+Possible Intents:
+1. "create_event": Scheduled calendar appointment or meeting tied to a specific time/date range. Required fields: title, startAt, endAt.
+2. "create_task": Action item or to-do. Optional dueAt.
+3. "create_note": Personal info, passwords, reference notes, or general facts to store. Required fields: title, content.
+4. "create_reminder": Explicit alert request for a task or standalone timestamp. Required fields: remindAt or reminderMinutesBefore.
+5. "missing_information": The request intends to create an event/task/reminder but critical required info (like event time) is missing. DO NOT HALLUCINATE OR GUESS MISSING TIMES! Return question asking for missing detail.
+6. "unknown": Input is completely unrelated to assistant management.
+
+Conversational Context Rules:
+- If conversation history is provided, COMBINE previous inputs and assistant questions with the latest user answer to fulfill the pending action.
+- Example: If previous input was "Meeting with Sarah tomorrow", assistant asked "What time is the meeting?", and latest input is "3 PM", combine them into an event titled "Meeting with Sarah" starting at 3 PM tomorrow.
+- NEVER guess or invent event times if the user did not specify a time. Return intent "missing_information" and ask a polite question.
+- Always output ISO 8601 format timestamps for dates/times (e.g., "2026-09-11T15:00:00.000Z").
+- If the user says "remind me X before", extract reminderMinutesBefore as an integer.
+`;
+
+  if (!apiKey || apiKey === 'your-gemini-api-key') {
+    return heuristicFallbackParse(prompt, now, conversationHistory);
+  }
+
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+    const model = 'gemini-2.5-flash';
+
+    let fullPrompt = prompt;
+    if (conversationHistory && conversationHistory.length > 0) {
+      const historyStr = conversationHistory.map((h) => `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.text}`).join('\n');
+      fullPrompt = `Previous Conversation History:\n${historyStr}\n\nLatest User Follow-up Answer: ${prompt}`;
+    }
+
+    const response = await ai.models.generateContent({
+      model,
+      contents: fullPrompt,
+      config: {
+        systemInstruction,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            intent: {
+              type: Type.STRING,
+              enum: [
+                'create_task',
+                'create_note',
+                'create_event',
+                'create_reminder',
+                'missing_information',
+                'unknown',
+              ],
+            },
+            confidence: { type: Type.NUMBER },
+            title: { type: Type.STRING },
+            description: { type: Type.STRING },
+            content: { type: Type.STRING },
+            startAt: { type: Type.STRING },
+            endAt: { type: Type.STRING },
+            dueAt: { type: Type.STRING },
+            remindAt: { type: Type.STRING },
+            reminderMinutesBefore: { type: Type.NUMBER },
+            missingFields: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+            },
+            question: { type: Type.STRING },
+            reasoning: { type: Type.STRING },
+          },
+          required: ['intent', 'confidence'],
+        },
+      },
+    });
+
+    if (!response.text) {
+      throw new Error('Empty response from Gemini AI model');
+    }
+
+    const parsed: AIInterpretationResult = JSON.parse(response.text);
+    return validateAndSanitizeResult(parsed);
+  } catch (err: unknown) {
+    console.error('Gemini AI API call failed, falling back to heuristic parser:', err);
+    return heuristicFallbackParse(prompt, now, conversationHistory);
+  }
+}
+
+function validateAndSanitizeResult(result: AIInterpretationResult): AIInterpretationResult {
+  const validIntents: AIIntent[] = [
+    'create_task',
+    'create_note',
+    'create_event',
+    'create_reminder',
+    'missing_information',
+    'unknown',
+  ];
+
+  if (!validIntents.includes(result.intent)) {
+    result.intent = 'unknown';
+  }
+
+  if (result.intent === 'create_event' && (!result.startAt || !result.endAt)) {
+    result.intent = 'missing_information';
+    result.missingFields = result.missingFields || ['startTime'];
+    result.question = result.question || 'What time is the meeting or event?';
+  }
+
+  return result;
+}
+
+function heuristicFallbackParse(
+  prompt: string,
+  now: Date,
+  conversationHistory?: { role: string; text: string }[]
+): AIInterpretationResult {
+  const lower = prompt.toLowerCase();
+
+  // If there's conversation history where assistant asked for time, merge context!
+  if (conversationHistory && conversationHistory.length > 0) {
+    const lastHistory = conversationHistory[conversationHistory.length - 1];
+    const firstUserMsg = conversationHistory.find((h) => h.role === 'user')?.text || 'Event';
+
+    if (lastHistory.text.toLowerCase().includes('time') || lower.includes('pm') || lower.includes('am') || lower.includes('at')) {
+      const start = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+      const hourMatch = lower.match(/(\d{1,2})/);
+      const hour = hourMatch ? parseInt(hourMatch[1], 10) : 15;
+      const adjustedHour = lower.includes('pm') && hour < 12 ? hour + 12 : hour;
+      start.setHours(adjustedHour, 0, 0, 0);
+
+      const end = new Date(start.getTime() + 60 * 60 * 1000);
+
+      return {
+        intent: 'create_event',
+        confidence: 0.9,
+        title: firstUserMsg,
+        startAt: start.toISOString(),
+        endAt: end.toISOString(),
+        reasoning: 'Fallback heuristic: merged follow-up answer with previous conversation context',
+      };
+    }
+  }
+
+  // Note detection
+  if (lower.includes('password') || lower.includes('wifi') || lower.includes('note:') || lower.includes('remember that')) {
+    return {
+      intent: 'create_note',
+      confidence: 0.9,
+      title: prompt.split(' ')[0] + ' ' + (prompt.split(' ')[1] || 'Note'),
+      content: prompt,
+      reasoning: 'Fallback heuristic: detected note / information keywords',
+    };
+  }
+
+  // Event detection
+  if (lower.includes('appointment') || lower.includes('dentist') || lower.includes('meeting') || lower.includes('flight')) {
+    const hasTime = /\b(\d{1,2}(:\d{2})?\s*(am|pm)?)\b/i.test(prompt) || lower.includes('at ');
+    if (!hasTime) {
+      return {
+        intent: 'missing_information',
+        confidence: 0.85,
+        title: prompt,
+        missingFields: ['startTime'],
+        question: 'What time is the appointment?',
+        reasoning: 'Fallback heuristic: detected meeting/event without specific time',
+      };
+    }
+
+    const start = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    start.setHours(15, 0, 0, 0);
+    const end = new Date(start.getTime() + 60 * 60 * 1000);
+
+    const hasReminder = lower.includes('remind me');
+    const reminderMinutesBefore = hasReminder ? 60 : undefined;
+
+    return {
+      intent: 'create_event',
+      confidence: 0.85,
+      title: prompt.split('.')[0],
+      startAt: start.toISOString(),
+      endAt: end.toISOString(),
+      reminderMinutesBefore,
+      reasoning: 'Fallback heuristic: parsed event with time and reminder request',
+    };
+  }
+
+  // Task detection
+  if (lower.includes('buy') || lower.includes('todo') || lower.includes('clean') || lower.includes('submit') || lower.includes('task')) {
+    const due = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    return {
+      intent: 'create_task',
+      confidence: 0.88,
+      title: prompt,
+      dueAt: due.toISOString(),
+      reasoning: 'Fallback heuristic: parsed to-do task',
+    };
+  }
+
+  return {
+    intent: 'create_task',
+    confidence: 0.7,
+    title: prompt,
+    reasoning: 'Fallback heuristic: default to task item',
+  };
+}
