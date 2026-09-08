@@ -248,64 +248,67 @@ export default function Dashboard() {
   const upcomingEvents = filteredEvents.filter((e) => new Date(e.startAt) > todayEnd && new Date(e.startAt) <= nextWeekEnd);
 
   return (
-    <div className="max-w-5xl w-full mx-auto px-4 py-6 space-y-6">
-      {/* Summary KPI Section */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+    <div className="max-w-6xl w-full mx-auto px-4 sm:px-6 py-8 space-y-6">
+      {/* Metric Cards Grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="p-4 sm:p-5 rounded-2xl glass-panel glass-panel-hover border border-white/10 flex items-center justify-between">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Events Today</p>
-            <p className="text-2xl font-bold text-slate-100 mt-0.5">{todayEvents.length}</p>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Events Today</p>
+            <p className="text-2xl sm:text-3xl font-extrabold text-white mt-1 tracking-tight">{todayEvents.length}</p>
           </div>
-          <div className="p-2.5 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+          <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center text-lg">
             📅
           </div>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+        <div className="p-4 sm:p-5 rounded-2xl glass-panel glass-panel-hover border border-white/10 flex items-center justify-between">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Pending Tasks</p>
-            <p className="text-2xl font-bold text-slate-100 mt-0.5">{tasks.filter((t) => !t.completed).length}</p>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Pending Tasks</p>
+            <p className="text-2xl sm:text-3xl font-extrabold text-white mt-1 tracking-tight">{tasks.filter((t) => !t.completed).length}</p>
           </div>
-          <div className="p-2.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center text-lg">
             ✅
           </div>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+        <div className="p-4 sm:p-5 rounded-2xl glass-panel glass-panel-hover border border-white/10 flex items-center justify-between">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Saved Notes</p>
-            <p className="text-2xl font-bold text-slate-100 mt-0.5">{notes.length}</p>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Saved Notes</p>
+            <p className="text-2xl sm:text-3xl font-extrabold text-white mt-1 tracking-tight">{notes.length}</p>
           </div>
-          <div className="p-2.5 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20">
+          <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center text-lg">
             📝
           </div>
         </div>
 
-        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+        <div className="p-4 sm:p-5 rounded-2xl glass-panel glass-panel-hover border border-white/10 flex items-center justify-between">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Active Alerts</p>
-            <p className="text-2xl font-bold text-slate-100 mt-0.5">{reminders.filter((r) => r.status === 'pending').length}</p>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Active Alerts</p>
+            <p className="text-2xl sm:text-3xl font-extrabold text-white mt-1 tracking-tight">{reminders.filter((r) => r.status === 'pending').length}</p>
           </div>
-          <div className="p-2.5 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20">
+          <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center text-lg">
             🔔
           </div>
         </div>
       </div>
 
-      {/* Active Conversation Follow-up Banner */}
+      {/* Conversation Follow-up Banner */}
       {conversationHistory.length > 0 && (
-        <div className="p-3 bg-indigo-950/40 border border-indigo-500/30 rounded-xl flex items-center justify-between text-xs text-indigo-300">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span>
-            <span>Follow-up Conversation Active ({conversationHistory.length} messages in context)</span>
+        <div className="p-4 rounded-xl bg-indigo-950/40 border border-indigo-500/30 backdrop-blur-md flex items-center justify-between text-xs text-indigo-300 shadow-lg">
+          <div className="flex items-center gap-2.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-indigo-400 ai-pulse-ring"></span>
+            <span className="font-semibold">Conversational Context Active ({conversationHistory.length} turns)</span>
           </div>
-          <button onClick={clearConversation} className="underline opacity-80 hover:opacity-100 font-medium">
-            Reset Context
+          <button 
+            onClick={clearConversation} 
+            className="px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 border border-indigo-500/30 transition-all duration-200 font-medium"
+          >
+            Clear Context
           </button>
         </div>
       )}
 
-      {/* AI Assistant Prominent Input */}
+      {/* Signature AI Terminal Command Input */}
       <AIInput onSubmit={handleAISubmit} loading={aiLoading} />
 
       {/* Action Bar: Search & Manual Add */}
@@ -315,11 +318,14 @@ export default function Dashboard() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search items..."
-            className="w-full px-3.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-200 placeholder-slate-500 text-xs focus:outline-none focus:border-indigo-500"
+            placeholder="Filter tasks, events, notes..."
+            className="w-full px-4 py-2 rounded-xl glass-input text-slate-200 placeholder-slate-400 text-xs sm:text-sm"
           />
           {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-1.5 text-xs text-slate-500">
+            <button 
+              onClick={() => setSearchQuery('')} 
+              className="absolute right-3 top-2.5 text-xs text-slate-400 hover:text-white"
+            >
               ✕
             </button>
           )}
@@ -327,76 +333,82 @@ export default function Dashboard() {
 
         <button
           onClick={() => setIsModalOpen(true)}
-          className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium transition flex items-center gap-1.5"
+          className="px-4 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 border border-slate-700 text-xs font-semibold transition-all duration-200 flex items-center gap-2 shadow-sm"
         >
-          <span>+</span> Manual Add
+          <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+          </svg>
+          Manual Add
         </button>
       </div>
 
       {/* AI Feedback Alerts */}
       {feedback && (
         <div
-          className={`p-4 rounded-xl border flex items-start justify-between gap-3 ${
+          className={`p-4 sm:p-5 rounded-2xl border backdrop-blur-md flex items-start justify-between gap-3 shadow-xl transition-all ${
             feedback.type === 'success'
-              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+              ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
               : feedback.type === 'question'
-              ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-300'
-              : 'bg-red-500/10 border-red-500/20 text-red-300'
+              ? 'bg-indigo-950/50 border-indigo-500/40 text-indigo-200'
+              : 'bg-red-950/40 border-red-500/30 text-red-300'
           }`}
         >
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider mb-0.5">
-              {feedback.type === 'question' ? '🤖 Assistant Question' : feedback.type === 'success' ? '✨ Action Executed' : '⚠️ Error'}
+          <div className="space-y-1">
+            <p className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
+              {feedback.type === 'question' ? '🤖 Assistant Follow-up' : feedback.type === 'success' ? '✨ Executed Successfully' : '⚠️ Action Error'}
             </p>
-            <p className="text-sm font-medium">{feedback.message}</p>
+            <p className="text-sm font-medium text-slate-100">{feedback.message}</p>
             {feedback.question && (
-              <p className="text-sm font-semibold text-white mt-1 bg-indigo-950/60 p-2.5 rounded-lg border border-indigo-500/30">
+              <div className="mt-2.5 p-3 rounded-xl bg-slate-950/80 border border-indigo-500/30 text-indigo-300 font-medium text-sm">
                 &quot;{feedback.question}&quot;
-              </p>
+              </div>
             )}
           </div>
-          <button onClick={() => setFeedback(null)} className="text-xs opacity-60 hover:opacity-100">
+          <button 
+            onClick={() => setFeedback(null)} 
+            className="p-1 rounded-lg text-slate-400 hover:text-white transition-all duration-200"
+          >
             ✕
           </button>
         </div>
       )}
 
-      {/* Navigation Tabs */}
-      <div className="flex items-center gap-1 border-b border-slate-800 pb-2 overflow-x-auto">
+      {/* Glass Navigation Tabs */}
+      <div className="flex items-center gap-1.5 p-1.5 rounded-2xl glass-panel border border-white/10 overflow-x-auto">
         <button
           onClick={() => setActiveTab('today')}
-          className={`px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition flex items-center gap-2 ${
+          className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 flex items-center gap-2 shrink-0 ${
             activeTab === 'today'
-              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              ? 'bg-gradient-to-r from-indigo-600 to-indigo-500 text-white shadow-lg shadow-indigo-500/25 border border-white/10'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
           }`}
         >
           ☀️ Today
-          <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-950/50">
+          <span className="px-2 py-0.5 rounded-full text-[10px] bg-slate-950/50 border border-white/10 font-mono">
             {todayTasks.length + todayEvents.length}
           </span>
         </button>
 
         <button
           onClick={() => setActiveTab('upcoming')}
-          className={`px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition flex items-center gap-2 ${
+          className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 flex items-center gap-2 shrink-0 ${
             activeTab === 'upcoming'
-              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              ? 'bg-gradient-to-r from-indigo-600 to-indigo-500 text-white shadow-lg shadow-indigo-500/25 border border-white/10'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
           }`}
         >
-          📆 Upcoming (7 Days)
-          <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-950/50">
+          📆 Upcoming
+          <span className="px-2 py-0.5 rounded-full text-[10px] bg-slate-950/50 border border-white/10 font-mono">
             {upcomingTasks.length + upcomingEvents.length}
           </span>
         </button>
 
         <button
           onClick={() => setActiveTab('tasks')}
-          className={`px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition flex items-center gap-2 ${
+          className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 flex items-center gap-2 shrink-0 ${
             activeTab === 'tasks'
-              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              ? 'bg-gradient-to-r from-indigo-600 to-indigo-500 text-white shadow-lg shadow-indigo-500/25 border border-white/10'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
           }`}
         >
           ✅ Tasks ({filteredTasks.length})
@@ -404,10 +416,10 @@ export default function Dashboard() {
 
         <button
           onClick={() => setActiveTab('events')}
-          className={`px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition flex items-center gap-2 ${
+          className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 flex items-center gap-2 shrink-0 ${
             activeTab === 'events'
-              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              ? 'bg-gradient-to-r from-indigo-600 to-indigo-500 text-white shadow-lg shadow-indigo-500/25 border border-white/10'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
           }`}
         >
           📅 Events ({filteredEvents.length})
@@ -415,10 +427,10 @@ export default function Dashboard() {
 
         <button
           onClick={() => setActiveTab('notes')}
-          className={`px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition flex items-center gap-2 ${
+          className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 flex items-center gap-2 shrink-0 ${
             activeTab === 'notes'
-              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              ? 'bg-gradient-to-r from-indigo-600 to-indigo-500 text-white shadow-lg shadow-indigo-500/25 border border-white/10'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
           }`}
         >
           📝 Notes ({filteredNotes.length})
@@ -426,13 +438,13 @@ export default function Dashboard() {
 
         <button
           onClick={() => setActiveTab('reminders')}
-          className={`px-4 py-2 rounded-lg text-xs md:text-sm font-medium transition flex items-center gap-2 ${
+          className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 flex items-center gap-2 shrink-0 ${
             activeTab === 'reminders'
-              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              ? 'bg-gradient-to-r from-indigo-600 to-indigo-500 text-white shadow-lg shadow-indigo-500/25 border border-white/10'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
           }`}
         >
-          🔔 Reminders ({reminders.length})
+          🔔 Alerts ({reminders.length})
         </button>
       </div>
 
@@ -441,11 +453,17 @@ export default function Dashboard() {
         {activeTab === 'today' && (
           <div className="space-y-6">
             <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Today&apos;s Scheduled Events</h3>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
+                Today&apos;s Scheduled Events
+              </h3>
               <EventList events={todayEvents} onDelete={handleDeleteEvent} loading={loading} />
             </div>
             <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Today&apos;s Tasks</h3>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                Today&apos;s Tasks
+              </h3>
               <TaskList tasks={todayTasks} onToggleComplete={handleToggleTask} onDelete={handleDeleteTask} loading={loading} />
             </div>
           </div>
@@ -454,11 +472,17 @@ export default function Dashboard() {
         {activeTab === 'upcoming' && (
           <div className="space-y-6">
             <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Upcoming Events (Next 7 Days)</h3>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
+                Upcoming Events (Next 7 Days)
+              </h3>
               <EventList events={upcomingEvents} onDelete={handleDeleteEvent} loading={loading} />
             </div>
             <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Upcoming Tasks</h3>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                Upcoming Tasks
+              </h3>
               <TaskList tasks={upcomingTasks} onToggleComplete={handleToggleTask} onDelete={handleDeleteTask} loading={loading} />
             </div>
           </div>

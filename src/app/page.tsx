@@ -9,13 +9,16 @@ export default async function Home() {
   const googleAccessToken = cookieStore.get('google_access_token')?.value;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+    <div className="min-h-screen flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
       <Navbar userEmail={user?.email} isGoogleConnected={!!googleAccessToken} />
       <main className="flex-1">
         <Dashboard />
       </main>
-      <footer className="border-t border-slate-900 px-6 py-4 text-center text-xs text-slate-500">
-        LifeOS &copy; {new Date().getFullYear()} &mdash; Personal AI Administrative Assistant
+      <footer className="border-t border-white/[0.08] bg-[#090d16]/60 backdrop-blur-md px-6 py-5 text-center text-xs text-slate-400 font-medium">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+          <span>LifeOS &copy; {new Date().getFullYear()} &mdash; Personal AI Administrative Assistant</span>
+          <span className="text-[11px] text-slate-500 font-mono">v2.0 Visual Engine</span>
+        </div>
       </footer>
     </div>
   );

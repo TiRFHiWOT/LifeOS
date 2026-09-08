@@ -74,59 +74,93 @@ export default function QuickCreateModal({ isOpen, onClose, onSuccess }: QuickCr
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl space-y-4">
+    <div className="fixed inset-0 z-50 bg-[#090d16]/80 backdrop-blur-md flex items-center justify-center p-4">
+      <div className="relative glass-panel rounded-2xl p-6 w-full max-w-lg shadow-2xl space-y-5 border border-white/10 overflow-hidden">
+        {/* Glow backdrop accent */}
+        <div className="absolute -top-24 -right-24 w-48 h-48 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none"></div>
+
         <div className="flex items-center justify-between">
-          <h3 className="text-base font-bold text-slate-100">Quick Manual Add</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-200">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+              </svg>
+            </div>
+            <h3 className="text-base font-bold text-white tracking-tight">Create Item Manually</h3>
+          </div>
+          <button 
+            type="button"
+            onClick={onClose} 
+            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-all duration-200"
+          >
             ✕
           </button>
         </div>
 
-        <div className="flex gap-2 border-b border-slate-800 pb-3">
+        {/* Tab Selection */}
+        <div className="flex p-1 gap-1 rounded-xl bg-slate-950/60 border border-white/[0.08]">
           <button
+            type="button"
             onClick={() => setType('task')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium ${type === 'task' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'}`}
+            className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all duration-200 ${
+              type === 'task' 
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/25' 
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
           >
             Task
           </button>
           <button
+            type="button"
             onClick={() => setType('event')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium ${type === 'event' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'}`}
+            className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all duration-200 ${
+              type === 'event' 
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/25' 
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
           >
             Event
           </button>
           <button
+            type="button"
             onClick={() => setType('note')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium ${type === 'note' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'}`}
+            className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all duration-200 ${
+              type === 'note' 
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/25' 
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
           >
             Note
           </button>
         </div>
 
-        {error && <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-lg">{error}</div>}
+        {error && (
+          <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-xl flex items-center gap-2">
+            <span>⚠️</span> {error}
+          </div>
+        )}
 
-        <form onSubmit={handleSubmit} className="space-y-3.5">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1">Title</label>
+            <label className="block text-xs font-medium text-slate-300 mb-1.5">Title</label>
             <input
               type="text"
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder={`Title of ${type}`}
-              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-indigo-500"
+              placeholder={`Enter ${type} title...`}
+              className="w-full px-4 py-2.5 rounded-xl glass-input text-slate-100 placeholder-slate-500 text-sm"
             />
           </div>
 
           {type === 'task' && (
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">Due Date & Time (Optional)</label>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5">Due Date & Time (Optional)</label>
               <input
                 type="datetime-local"
                 value={dueAt}
                 onChange={(e) => setDueAt(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-indigo-500"
+                className="w-full px-4 py-2.5 rounded-xl glass-input text-slate-100 text-sm"
               />
             </div>
           )}
@@ -134,23 +168,23 @@ export default function QuickCreateModal({ isOpen, onClose, onSuccess }: QuickCr
           {type === 'event' && (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">Start Time</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">Start Time</label>
                 <input
                   type="datetime-local"
                   required
                   value={startAt}
                   onChange={(e) => setStartAt(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2.5 rounded-xl glass-input text-slate-100 text-xs sm:text-sm"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">End Time</label>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">End Time</label>
                 <input
                   type="datetime-local"
                   required
                   value={endAt}
                   onChange={(e) => setEndAt(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2.5 rounded-xl glass-input text-slate-100 text-xs sm:text-sm"
                 />
               </div>
             </div>
@@ -158,43 +192,43 @@ export default function QuickCreateModal({ isOpen, onClose, onSuccess }: QuickCr
 
           {type === 'note' ? (
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">Content</label>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5">Note Content</label>
               <textarea
                 required
                 rows={4}
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
-                placeholder="Note body content..."
-                className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-indigo-500"
+                placeholder="Write your note body here..."
+                className="w-full px-4 py-2.5 rounded-xl glass-input text-slate-100 placeholder-slate-500 text-sm font-mono"
               />
             </div>
           ) : (
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">Description (Optional)</label>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5">Description (Optional)</label>
               <textarea
                 rows={2}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Additional details..."
-                className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-slate-100 text-sm focus:outline-none focus:border-indigo-500"
+                className="w-full px-4 py-2.5 rounded-xl glass-input text-slate-100 placeholder-slate-500 text-sm"
               />
             </div>
           )}
 
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex justify-end gap-2.5 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-slate-200"
+              className="px-4 py-2.5 text-xs font-medium text-slate-400 hover:text-white transition-all duration-200"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white rounded-lg transition disabled:opacity-50"
+              className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-xs font-semibold text-white rounded-xl shadow-lg shadow-indigo-500/25 transition-all duration-200 disabled:opacity-50 border border-white/10"
             >
-              {loading ? 'Creating...' : `Create ${type}`}
+              {loading ? 'Saving...' : `Save ${type.charAt(0).toUpperCase() + type.slice(1)}`}
             </button>
           </div>
         </form>
