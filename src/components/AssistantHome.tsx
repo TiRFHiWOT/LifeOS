@@ -16,7 +16,6 @@ interface ConversationMessage {
 }
 
 function getGreeting() {
-  if (typeof window === 'undefined') return 'Good evening';
   const hour = new Date().getHours();
   if (hour < 12) return 'Good morning';
   if (hour < 18) return 'Good afternoon';
@@ -28,7 +27,11 @@ export default function AssistantHome() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ActionResultData | null>(null);
   const [conversationHistory, setConversationHistory] = useState<ConversationMessage[]>([]);
-  const greeting = getGreeting();
+  const [greeting, setGreeting] = useState('Good day');
+
+  useEffect(() => {
+    setGreeting(getGreeting());
+  }, []);
 
   // Coming up teaser state
   const [upcomingEvents, setUpcomingEvents] = useState<EventItem[]>([]);

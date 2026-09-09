@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { AIInterpretationResult, AIIntent } from '@/types/ai';
+import { AIInterpretationResult, AIIntent } from '../types/ai';
 
 export async function interpretNaturalLanguage(
   prompt: string,

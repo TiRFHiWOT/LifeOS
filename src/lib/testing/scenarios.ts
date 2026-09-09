@@ -1,4 +1,4 @@
-import { interpretNaturalLanguage } from '@/services/ai';
+import { interpretNaturalLanguage } from '../../services/ai';
 
 export interface ScenarioTestResult {
   scenarioName: string;
