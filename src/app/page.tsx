@@ -1,10 +1,16 @@
 import { getUser } from '@/lib/auth';
 import Navbar from '@/components/Navbar';
 import AssistantHome from '@/components/AssistantHome';
+import LandingPage from '@/components/LandingPage';
 import { cookies } from 'next/headers';
 
 export default async function Home() {
   const user = await getUser();
+
+  if (!user) {
+    return <LandingPage />;
+  }
+
   const cookieStore = await cookies();
   const googleAccessToken = cookieStore.get('google_access_token')?.value;
 
@@ -23,3 +29,4 @@ export default async function Home() {
     </div>
   );
 }
+

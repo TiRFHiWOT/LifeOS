@@ -7,7 +7,7 @@ export async function middleware(request: NextRequest) {
   });
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   // Fallback for development if env variables are not set yet
   if (!supabaseUrl || !supabaseAnonKey) {
@@ -37,11 +37,17 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isAuthRoute = request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname.startsWith('/signup');
-  const isPublicRoute = isAuthRoute || request.nextUrl.pathname.startsWith('/auth/callback') || request.nextUrl.pathname.startsWith('/_next');
+  const pathname = request.nextUrl.pathname;
+  const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/signup');
 
-  // If user is not signed in and attempting to access protected route, redirect to login
-  if (!user && !isPublicRoute) {
+  const isProtectedRoute =
+    pathname.startsWith('/calendar') ||
+    pathname.startsWith('/tasks') ||
+    pathname.startsWith('/notes') ||
+    pathname.startsWith('/reminders');
+
+  // Only redirect to login for explicitly protected routes
+  if (!user && isProtectedRoute) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);
