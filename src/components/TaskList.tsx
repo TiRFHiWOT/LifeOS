@@ -1,6 +1,7 @@
 'use client';
 
 import { TaskItem } from '@/types';
+import { CheckSquare, Trash2, Clock, Check } from 'lucide-react';
 
 interface TaskListProps {
   tasks: TaskItem[];
@@ -24,9 +25,7 @@ export default function TaskList({ tasks, onToggleComplete, onDelete, loading }:
     return (
       <div className="p-8 text-center glass-panel rounded-2xl border border-white/5">
         <div className="w-10 h-10 mx-auto mb-3 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
+          <CheckSquare className="w-5 h-5 text-indigo-400" />
         </div>
         <p className="text-sm font-medium text-slate-300">No tasks found</p>
         <p className="text-xs text-slate-500 mt-1">Use the AI input above to create a task (e.g. &quot;Buy groceries tomorrow&quot;).</p>
@@ -60,11 +59,7 @@ export default function TaskList({ tasks, onToggleComplete, onDelete, loading }:
                     : 'border-white/20 hover:border-indigo-400 bg-slate-800/50'
                 }`}
               >
-                {task.completed && (
-                  <svg className="w-3.5 h-3.5 stroke-[3]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
+                {task.completed && <Check className="w-3.5 h-3.5 stroke-[3]" />}
               </button>
 
               <div className="min-w-0 flex-1">
@@ -81,9 +76,7 @@ export default function TaskList({ tasks, onToggleComplete, onDelete, loading }:
                         ? 'bg-red-500/10 text-red-400 border-red-500/20' 
                         : 'bg-white/[0.04] text-slate-400 border-white/[0.08]'
                     }`}>
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
+                      <Clock className="w-3 h-3" />
                       {new Date(task.dueAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>
@@ -97,9 +90,7 @@ export default function TaskList({ tasks, onToggleComplete, onDelete, loading }:
               className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200"
               title="Delete Task"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
+              <Trash2 className="w-4 h-4" />
             </button>
           </div>
         );

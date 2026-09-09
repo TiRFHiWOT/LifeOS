@@ -5,6 +5,7 @@ import ResultCard, { ActionResultData } from '@/components/ResultCard';
 import Link from 'next/link';
 import { TaskItem, EventItem } from '@/types';
 import { Database } from '@/types/database';
+import { Sparkles, Plus, Calendar, CheckSquare, FileText, ArrowRight } from 'lucide-react';
 
 type TaskRow = Database['public']['Tables']['tasks']['Row'];
 type EventRow = Database['public']['Tables']['events']['Row'];
@@ -140,7 +141,10 @@ export default function AssistantHome() {
     <div className="max-w-lg w-full mx-auto px-4 py-8 sm:py-12 space-y-8 flex flex-col justify-center min-h-[calc(100vh-80px)]">
       {/* Clean Assistant Greeting */}
       <div className="text-center space-y-2">
-        <p className="text-sm font-medium text-indigo-400 tracking-wide">{greeting}</p>
+        <p className="text-sm font-medium text-indigo-400 tracking-wide flex items-center justify-center gap-1.5">
+          <Sparkles className="w-4 h-4 text-indigo-400" />
+          <span>{greeting}</span>
+        </p>
         <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-100 tracking-tight">
           What do you need me to remember?
         </h2>
@@ -161,9 +165,10 @@ export default function AssistantHome() {
           <button
             type="submit"
             disabled={loading || !prompt.trim()}
-            className="w-full sm:w-auto px-7 py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-base transition shadow-lg shadow-indigo-500/25 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+            className="w-full sm:w-auto px-7 py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-base transition shadow-lg shadow-indigo-500/25 disabled:opacity-40 disabled:cursor-not-allowed shrink-0 flex items-center justify-center gap-2"
           >
-            {loading ? 'Adding...' : 'Add'}
+            <Plus className="w-5 h-5" />
+            <span>{loading ? 'Adding...' : 'Add'}</span>
           </button>
         </div>
       </form>
@@ -173,23 +178,26 @@ export default function AssistantHome() {
         <button
           type="button"
           onClick={() => setExamplePrompt('Dentist appointment Friday at 3 PM')}
-          className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800 transition"
+          className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800 transition flex items-center gap-1.5"
         >
-          Dentist Friday 3 PM
+          <Calendar className="w-3.5 h-3.5 text-indigo-400" />
+          <span>Dentist Friday 3 PM</span>
         </button>
         <button
           type="button"
           onClick={() => setExamplePrompt('Buy groceries tomorrow')}
-          className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800 transition"
+          className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800 transition flex items-center gap-1.5"
         >
-          Buy groceries
+          <CheckSquare className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Buy groceries</span>
         </button>
         <button
           type="button"
           onClick={() => setExamplePrompt('My WiFi password is GuestWifi2026')}
-          className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800 transition"
+          className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800 transition flex items-center gap-1.5"
         >
-          WiFi password
+          <FileText className="w-3.5 h-3.5 text-purple-400" />
+          <span>WiFi password</span>
         </button>
       </div>
 
@@ -207,8 +215,9 @@ export default function AssistantHome() {
         <div className="pt-6 border-t border-slate-800/80 space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Coming up</span>
-            <Link href="/calendar" className="text-xs text-indigo-400 hover:text-indigo-300 font-medium">
-              View all &rarr;
+            <Link href="/calendar" className="text-xs text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1">
+              <span>View all</span>
+              <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
 
@@ -216,7 +225,7 @@ export default function AssistantHome() {
             {upcomingEvents.map((evt) => (
               <div key={evt.id} className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80 flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2.5">
-                  <span className="text-base">📅</span>
+                  <Calendar className="w-4 h-4 text-indigo-400" />
                   <span className="font-semibold text-slate-200">{evt.title}</span>
                 </div>
                 <span className="text-indigo-300 font-mono">
@@ -228,7 +237,7 @@ export default function AssistantHome() {
             {upcomingTasks.map((t) => (
               <div key={t.id} className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80 flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2.5">
-                  <span className="text-base">✅</span>
+                  <CheckSquare className="w-4 h-4 text-emerald-400" />
                   <span className="font-semibold text-slate-200">{t.title}</span>
                 </div>
                 <span className="text-slate-400">Task</span>

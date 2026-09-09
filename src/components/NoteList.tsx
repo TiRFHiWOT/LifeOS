@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { NoteItem } from '@/types';
+import { FileText, Copy, Trash2, Clock, Check } from 'lucide-react';
 
 interface NoteListProps {
   notes: NoteItem[];
@@ -32,9 +33,7 @@ export default function NoteList({ notes, onDelete, loading }: NoteListProps) {
     return (
       <div className="p-8 text-center glass-panel rounded-2xl border border-white/5">
         <div className="w-10 h-10 mx-auto mb-3 rounded-full bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-          </svg>
+          <FileText className="w-5 h-5 text-purple-400" />
         </div>
         <p className="text-sm font-medium text-slate-300">No notes saved</p>
         <p className="text-xs text-slate-500 mt-1">Ask LifeOS to save information (e.g. &quot;My apartment WiFi password is GuestWifi2026&quot;).</p>
@@ -52,7 +51,7 @@ export default function NoteList({ notes, onDelete, loading }: NoteListProps) {
           <div>
             <div className="flex items-center justify-between gap-2 mb-2.5">
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-purple-400"></span>
+                <FileText className="w-4 h-4 text-purple-400" />
                 <h4 className="text-sm font-semibold text-slate-100 truncate">{note.title}</h4>
               </div>
               <div className="flex items-center gap-1">
@@ -63,11 +62,12 @@ export default function NoteList({ notes, onDelete, loading }: NoteListProps) {
                   title="Copy note content"
                 >
                   {copiedId === note.id ? (
-                    <span className="text-[10px] text-emerald-400 font-bold px-1">Copied!</span>
+                    <span className="text-[10px] text-emerald-400 font-bold px-1 flex items-center gap-0.5">
+                      <Check className="w-3 h-3" />
+                      Copied!
+                    </span>
                   ) : (
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
+                    <Copy className="w-3.5 h-3.5" />
                   )}
                 </button>
                 <button
@@ -76,9 +76,7 @@ export default function NoteList({ notes, onDelete, loading }: NoteListProps) {
                   className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200"
                   title="Delete Note"
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
+                  <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
@@ -87,9 +85,7 @@ export default function NoteList({ notes, onDelete, loading }: NoteListProps) {
             </p>
           </div>
           <div className="mt-3 text-[10px] text-slate-400 font-mono text-right flex items-center justify-end gap-1">
-            <svg className="w-3 h-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+            <Clock className="w-3 h-3 text-slate-500" />
             Saved {new Date(note.createdAt).toLocaleDateString()}
           </div>
         </div>

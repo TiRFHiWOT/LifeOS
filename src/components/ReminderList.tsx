@@ -1,6 +1,7 @@
 'use client';
 
 import { ReminderItem } from '@/types';
+import { Bell, Trash2 } from 'lucide-react';
 
 interface ReminderListProps {
   reminders: ReminderItem[];
@@ -23,9 +24,7 @@ export default function ReminderList({ reminders, onDelete, loading }: ReminderL
     return (
       <div className="p-8 text-center glass-panel rounded-2xl border border-white/5">
         <div className="w-10 h-10 mx-auto mb-3 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-          </svg>
+          <Bell className="w-5 h-5 text-amber-400" />
         </div>
         <p className="text-sm font-medium text-slate-300">No active reminder alerts</p>
         <p className="text-xs text-slate-500 mt-1">Reminders are created automatically when scheduling events or tasks with alerts.</p>
@@ -42,9 +41,7 @@ export default function ReminderList({ reminders, onDelete, loading }: ReminderL
         >
           <div className="flex items-center gap-3.5 min-w-0 flex-1">
             <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 shrink-0">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-              </svg>
+              <Bell className="w-4 h-4 text-amber-400" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-xs sm:text-sm font-semibold text-slate-100 truncate">
@@ -77,9 +74,7 @@ export default function ReminderList({ reminders, onDelete, loading }: ReminderL
             className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200"
             title="Delete Reminder"
           >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
+            <Trash2 className="w-4 h-4" />
           </button>
         </div>
       ))}

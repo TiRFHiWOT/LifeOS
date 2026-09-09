@@ -2,6 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import LifeOSLogo from '@/components/LifeOSLogo';
+import { Home, Calendar, CheckSquare, FileText, Bell, X, LogOut, Globe } from 'lucide-react';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -16,11 +18,11 @@ export default function Sidebar({ isOpen, onClose, userEmail, isGoogleConnected 
   if (!isOpen) return null;
 
   const navItems = [
-    { label: 'Home', href: '/', icon: '🏠' },
-    { label: 'Calendar', href: '/calendar', icon: '📅' },
-    { label: 'Tasks', href: '/tasks', icon: '✅' },
-    { label: 'Notes', href: '/notes', icon: '📝' },
-    { label: 'Reminders', href: '/reminders', icon: '🔔' },
+    { label: 'Home', href: '/', icon: Home },
+    { label: 'Calendar', href: '/calendar', icon: Calendar },
+    { label: 'Tasks', href: '/tasks', icon: CheckSquare },
+    { label: 'Notes', href: '/notes', icon: FileText },
+    { label: 'Reminders', href: '/reminders', icon: Bell },
   ];
 
   return (
@@ -37,25 +39,22 @@ export default function Sidebar({ isOpen, onClose, userEmail, isGoogleConnected 
           {/* Header */}
           <div className="flex items-center justify-between pb-6 border-b border-white/10">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white shadow-md">
-                L
-              </div>
+              <LifeOSLogo size={30} className="w-8 h-8" />
               <span className="font-bold text-lg text-slate-100 tracking-tight">LifeOS</span>
             </div>
             <button 
               onClick={onClose}
-              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition"
+              className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition"
               aria-label="Close menu"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <X className="w-5 h-5" />
             </button>
           </div>
 
           {/* Navigation Links */}
           <nav className="mt-6 space-y-1.5">
             {navItems.map((item) => {
+              const Icon = item.icon;
               const isActive = pathname === item.href;
               return (
                 <Link
@@ -68,7 +67,7 @@ export default function Sidebar({ isOpen, onClose, userEmail, isGoogleConnected 
                       : 'text-slate-300 hover:bg-white/[0.06] hover:text-white'
                   }`}
                 >
-                  <span className="text-base">{item.icon}</span>
+                  <Icon className="w-4 h-4" />
                   <span>{item.label}</span>
                 </Link>
               );
@@ -82,7 +81,7 @@ export default function Sidebar({ isOpen, onClose, userEmail, isGoogleConnected 
           <div className="px-2">
             {isGoogleConnected ? (
               <div className="flex items-center gap-2 text-xs text-emerald-400 font-medium bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 rounded-xl">
-                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                 <span>Google Calendar Synced</span>
               </div>
             ) : (
@@ -90,7 +89,7 @@ export default function Sidebar({ isOpen, onClose, userEmail, isGoogleConnected 
                 href="/api/google/auth"
                 className="flex items-center justify-center gap-2 text-xs text-slate-300 font-medium bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 rounded-xl transition"
               >
-                <span>📅</span>
+                <Globe className="w-4 h-4 text-indigo-400" />
                 <span>Connect Google Calendar</span>
               </a>
             )}
@@ -104,9 +103,10 @@ export default function Sidebar({ isOpen, onClose, userEmail, isGoogleConnected 
               <form action="/auth/signout" method="post">
                 <button
                   type="submit"
-                  className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition"
+                  className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition"
                 >
-                  Sign Out
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Sign Out</span>
                 </button>
               </form>
             </div>
