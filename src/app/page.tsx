@@ -1,6 +1,6 @@
 import { getUser } from '@/lib/auth';
 import Navbar from '@/components/Navbar';
-import Dashboard from '@/components/Dashboard';
+import AssistantHome from '@/components/AssistantHome';
 import { cookies } from 'next/headers';
 
 export default async function Home() {
@@ -9,15 +9,15 @@ export default async function Home() {
   const googleAccessToken = cookieStore.get('google_access_token')?.value;
 
   return (
-    <div className="min-h-screen flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
+    <div className="min-h-screen flex flex-col font-sans selection:bg-indigo-500 selection:text-white bg-[#090d16] text-slate-100">
       <Navbar userEmail={user?.email} isGoogleConnected={!!googleAccessToken} />
-      <main className="flex-1">
-        <Dashboard />
+      <main className="flex-1 flex flex-col justify-center">
+        <AssistantHome />
       </main>
-      <footer className="border-t border-white/[0.08] bg-[#090d16]/60 backdrop-blur-md px-6 py-5 text-center text-xs text-slate-400 font-medium">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>LifeOS &copy; {new Date().getFullYear()} &mdash; Personal AI Administrative Assistant</span>
-          <span className="text-[11px] text-slate-500 font-mono">v2.0 Visual Engine</span>
+      <footer className="border-t border-white/[0.08] bg-[#090d16]/80 px-4 py-4 text-center text-xs text-slate-500">
+        <div className="max-w-lg mx-auto flex items-center justify-between">
+          <span>LifeOS Personal Assistant</span>
+          <span className="text-[11px] text-slate-600 font-mono">&copy; {new Date().getFullYear()}</span>
         </div>
       </footer>
     </div>
