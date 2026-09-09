@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import LifeOSLogo from '@/components/LifeOSLogo';
 import { Menu, Calendar } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface NavbarProps {
   userEmail?: string;
@@ -12,6 +13,21 @@ interface NavbarProps {
 
 export default function Navbar({ userEmail, isGoogleConnected }: NavbarProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const supabase = createClient();
+
+  const handleConnectGoogle = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+        scopes: 'https://www.googleapis.com/auth/calendar.events',
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
+      },
+    });
+  };
 
   return (
     <>
@@ -42,13 +58,13 @@ export default function Navbar({ userEmail, isGoogleConnected }: NavbarProps) {
                 <span className="hidden sm:inline">Calendar Synced</span>
               </span>
             ) : (
-              <a
-                href="/api/google/auth"
-                className="inline-flex items-center gap-1.5 text-xs text-slate-300 font-medium bg-slate-800 hover:bg-slate-700 border border-slate-700 px-2.5 py-1 rounded-full transition"
+              <button
+                onClick={handleConnectGoogle}
+                className="inline-flex items-center gap-1.5 text-xs text-slate-300 font-medium bg-slate-800 hover:bg-slate-700 border border-slate-700 px-2.5 py-1 rounded-full transition cursor-pointer"
               >
                 <Calendar className="w-3.5 h-3.5 text-indigo-400" />
                 <span className="hidden sm:inline">Connect Calendar</span>
-              </a>
+              </button>
             )}
 
             {userEmail && (

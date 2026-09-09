@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import LifeOSLogo from '@/components/LifeOSLogo';
 import { Home, Calendar, CheckSquare, FileText, Bell, X, LogOut, Globe } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -14,8 +15,24 @@ interface SidebarProps {
 
 export default function Sidebar({ isOpen, onClose, userEmail, isGoogleConnected }: SidebarProps) {
   const pathname = usePathname();
+  const supabase = createClient();
 
   if (!isOpen) return null;
+
+  const handleConnectGoogle = async () => {
+    onClose();
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+        scopes: 'https://www.googleapis.com/auth/calendar.events',
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
+      },
+    });
+  };
 
   const navItems = [
     { label: 'Home', href: '/', icon: Home },
@@ -77,23 +94,18 @@ export default function Sidebar({ isOpen, onClose, userEmail, isGoogleConnected 
 
         {/* Footer Actions */}
         <div className="pt-6 border-t border-white/10 space-y-4">
-          {/* Google Calendar Sync status */}
-          <div className="px-2">
-            {isGoogleConnected ? (
-              <div className="flex items-center gap-2 text-xs text-emerald-400 font-medium bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 rounded-xl">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span>Google Calendar Synced</span>
-              </div>
-            ) : (
-              <a
-                href="/api/google/auth"
-                className="flex items-center justify-center gap-2 text-xs text-slate-300 font-medium bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 rounded-xl transition"
+          {/* Only show Connect Google Calendar button if not connected */}
+          {!isGoogleConnected && (
+            <div className="px-2">
+              <button
+                onClick={handleConnectGoogle}
+                className="w-full flex items-center justify-center gap-2 text-xs text-slate-300 font-medium bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-2 rounded-xl transition cursor-pointer"
               >
                 <Globe className="w-4 h-4 text-indigo-400" />
                 <span>Connect Google Calendar</span>
-              </a>
-            )}
-          </div>
+              </button>
+            </div>
+          )}
 
           {userEmail && (
             <div className="flex items-center justify-between px-2 pt-2">
