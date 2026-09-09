@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useSyncExternalStore } from 'react';
 import ResultCard, { ActionResultData } from '@/components/ResultCard';
 import Link from 'next/link';
 import { TaskItem, EventItem } from '@/types';
@@ -15,6 +15,8 @@ interface ConversationMessage {
   text: string;
 }
 
+const emptySubscribe = () => () => {};
+
 function getGreeting() {
   const hour = new Date().getHours();
   if (hour < 12) return 'Good morning';
@@ -22,16 +24,20 @@ function getGreeting() {
   return 'Good evening';
 }
 
+function useGreeting() {
+  return useSyncExternalStore(
+    emptySubscribe,
+    () => getGreeting(),
+    () => 'Good day'
+  );
+}
+
 export default function AssistantHome() {
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ActionResultData | null>(null);
   const [conversationHistory, setConversationHistory] = useState<ConversationMessage[]>([]);
-  const [greeting, setGreeting] = useState('Good day');
-
-  useEffect(() => {
-    setGreeting(getGreeting());
-  }, []);
+  const greeting = useGreeting();
 
   // Coming up teaser state
   const [upcomingEvents, setUpcomingEvents] = useState<EventItem[]>([]);
