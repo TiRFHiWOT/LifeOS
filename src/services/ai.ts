@@ -247,11 +247,26 @@ function heuristicFallbackParse(
   // Flexible notification & reminder regex pattern
   const isNotificationIntent = /(notify|remind|ping|alert|let me know|warn|tell me|wake me|heads up)/i.test(lower);
   if (isNotificationIntent) {
-    const remindDate = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-    const hourMatch = lower.match(/(\d{1,2})\s*(pm|am)?/i);
-    const hour = hourMatch ? parseInt(hourMatch[1], 10) : 16;
-    const adjustedHour = lower.includes('pm') && hour < 12 ? hour + 12 : hour;
-    remindDate.setHours(adjustedHour, 0, 0, 0);
+    let remindDate = new Date(now);
+
+    // Check relative minutes e.g. "in 30 minutes"
+    const relMinMatch = lower.match(/in\s+(\d+)\s+min/i);
+    if (relMinMatch) {
+      const mins = parseInt(relMinMatch[1], 10);
+      remindDate = new Date(now.getTime() + mins * 60 * 1000);
+    } else {
+      // Check time e.g. "4 PM" or "16:00"
+      const hourMatch = lower.match(/(\d{1,2})(:\d{2})?\s*(pm|am)?/i);
+      let hour = hourMatch ? parseInt(hourMatch[1], 10) : 16;
+      if (lower.includes('pm') && hour < 12) hour += 12;
+      if (lower.includes('am') && hour === 12) hour = 0;
+
+      // If specified time has already passed today, set for tomorrow
+      if (hour < now.getHours()) {
+        remindDate.setDate(remindDate.getDate() + 1);
+      }
+      remindDate.setHours(hour, 0, 0, 0);
+    }
 
     return {
       intent: 'create_reminder',
