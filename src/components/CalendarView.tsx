@@ -17,7 +17,7 @@ interface CalendarDisplayItem {
   description?: string | null;
   start_at: string;
   end_at: string;
-  type: 'event' | 'task';
+  type: 'event' | 'task' | 'reminder';
   completed?: boolean;
   calendar_event_id?: string | null;
 }
@@ -33,10 +33,17 @@ export default function CalendarView() {
   const fetchCalendarData = async () => {
     try {
       setLoading(true);
-      const [eventsRes, tasksRes] = await Promise.all([
+      const [eventsRes, tasksRes, remindersRes] = await Promise.all([
         fetch('/api/events').then((r) => r.json()),
         fetch('/api/tasks').then((r) => r.json()),
+        fetch('/api/reminders').then((r) => r.json()),
       ]);
+
+      const reminderTaskIds = new Set(
+        (remindersRes.reminders || [])
+          .map((r: { task_id?: string }) => r.task_id)
+          .filter(Boolean)
+      );
 
       const formattedEvents: CalendarDisplayItem[] = (eventsRes.events || []).map((e: { id: string; title: string; description?: string; start_at: string; end_at: string; calendar_event_id?: string }) => ({
         id: e.id,
@@ -50,15 +57,18 @@ export default function CalendarView() {
 
       const formattedTasks: CalendarDisplayItem[] = (tasksRes.tasks || [])
         .filter((t: { due_at?: string }) => Boolean(t.due_at))
-        .map((t: { id: string; title: string; description?: string; due_at: string; completed?: boolean }) => ({
-          id: t.id,
-          title: t.title,
-          description: t.description,
-          start_at: t.due_at,
-          end_at: t.due_at,
-          type: 'task',
-          completed: t.completed,
-        }));
+        .map((t: { id: string; title: string; description?: string; due_at: string; completed?: boolean }) => {
+          const isReminder = reminderTaskIds.has(t.id) || /(let me know|remind|alert|ping|notify|reminder)/i.test(t.title);
+          return {
+            id: t.id,
+            title: t.title,
+            description: t.description,
+            start_at: t.due_at,
+            end_at: t.due_at,
+            type: isReminder ? 'reminder' : 'task',
+            completed: t.completed,
+          };
+        });
 
       setItems([...formattedEvents, ...formattedTasks]);
     } catch (err) {
@@ -72,7 +82,7 @@ export default function CalendarView() {
     fetchCalendarData();
   }, []);
 
-  const handleDelete = async (id: string, type: 'event' | 'task') => {
+  const handleDelete = async (id: string, type: 'event' | 'task' | 'reminder') => {
     setDeletingId(id);
     try {
       const endpoint = type === 'event' ? `/api/events?id=${id}` : `/api/tasks?id=${id}`;
@@ -264,7 +274,9 @@ export default function CalendarView() {
                         <div
                           key={ev.id}
                           className={`truncate text-[10px] px-1.5 py-0.5 rounded border font-medium ${
-                            ev.type === 'task'
+                            ev.type === 'reminder'
+                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                              : ev.type === 'task'
                               ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
                               : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
                           }`}
@@ -321,7 +333,9 @@ export default function CalendarView() {
                         <div className="flex items-center gap-1.5">
                           <span
                             className={`text-[9px] px-1.5 py-0.2 rounded font-mono uppercase border ${
-                              ev.type === 'task'
+                              ev.type === 'reminder'
+                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                : ev.type === 'task'
                                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                                 : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
                             }`}
@@ -392,7 +406,9 @@ export default function CalendarView() {
                     <div className="flex items-center gap-2">
                       <span
                         className={`text-[9px] px-1.5 py-0.2 rounded font-mono uppercase border ${
-                          ev.type === 'task'
+                          ev.type === 'reminder'
+                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                            : ev.type === 'task'
                             ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                             : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
                         }`}
