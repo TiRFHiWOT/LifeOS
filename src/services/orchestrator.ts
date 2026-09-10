@@ -72,16 +72,16 @@ export async function orchestrateAIAction(
     }
 
     case 'create_note': {
-      const title = interpretation.title || interpretation.content?.slice(0, 30) || 'Untitled Note';
-      const content = interpretation.content || interpretation.description || interpretation.title || '';
+      let content = interpretation.content?.trim() || interpretation.description?.trim() || '';
+      if (!content || /\(Optional\)/i.test(content) || /Please provide/i.test(content)) {
+        content = interpretation.title && !/\(Optional\)/i.test(interpretation.title) && !interpretation.title.endsWith('?')
+          ? interpretation.title
+          : 'Saved Information';
+      }
 
-      if (!content.trim()) {
-        return {
-          success: false,
-          intent: interpretation.intent,
-          actionType: 'missing_information',
-          question: 'What content would you like to save in the note?',
-        };
+      let title = interpretation.title?.trim() || '';
+      if (!title || /\(Optional\)/i.test(title) || title.endsWith('?')) {
+        title = content.length > 35 ? content.slice(0, 32) + '...' : content;
       }
 
       const note = await createNote(userId, {

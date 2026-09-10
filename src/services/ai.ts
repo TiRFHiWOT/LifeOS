@@ -23,7 +23,7 @@ Current reference time context:
 Possible Intents:
 1. "create_event": Scheduled calendar appointment or meeting tied to a specific time/date range. Required fields: title, startAt, endAt.
 2. "create_task": Action item or to-do. Optional dueAt.
-3. "create_note": Personal info, passwords, reference notes, or general facts to store. Required fields: title, content.
+3. "create_note": Personal info, passwords, reference notes, or general facts to store. Required fields: title, content. IMPORTANT FOR NOTES: 'content' MUST be the verbatim user input text to save. NEVER output questions, placeholders, or text like '(Optional)' or 'Please specify...' in title or content.
 4. "create_reminder": Explicit alert request for a task or standalone timestamp. Required fields: remindAt or reminderMinutesBefore.
 5. "suggest_choices": Use this when user input is ambiguous, a general status update (e.g., "I am sick today", "I feel tired", "Going to New York"), or could be handled in multiple ways. Return intent "suggest_choices" with a polite message in "question" and 2 to 4 structured choices in "choices". Each choice must have "label", "type" ('task'|'note'|'event'|'reminder'), and full "interpretation" payload object.
 6. "missing_information": The request intends a specific action but critical required info (like event time) is missing.
@@ -125,6 +125,35 @@ Always output ISO 8601 format timestamps for dates/times (e.g., "2026-09-11T15:0
   }
 }
 
+function sanitizeAIText(text?: string): string {
+  if (!text) return '';
+
+  let cleaned = text
+    .replace(/\s*--\s*(Previous Turn|This is not a new response|Due to the extreme length|The provided text|The user's input|Please ensure that user turn|If this is a real password|I have truncated)[\s\S]*$/i, '')
+    .replace(/\(truncated\)/gi, '')
+    .replace(/\(max length \d+ chars\)/gi, '')
+    .replace(/\(Optional\)\s*Please.*/gi, '')
+    .replace(/--\s*This is a very long[\s\S]*$/i, '')
+    .replace(/^["']|["']$/g, '')
+    .trim();
+
+  return cleaned;
+}
+
+function sanitizeTitle(title?: string, fallbackPrompt?: string): string {
+  let clean = sanitizeAIText(title);
+  if (!clean || clean.length < 2 || /\(Optional\)/i.test(clean) || clean.endsWith('?')) {
+    const lower = (fallbackPrompt || '').toLowerCase();
+    if (lower.includes('wifi')) clean = 'WiFi Information';
+    else if (lower.includes('password')) clean = 'Password Note';
+    else clean = sanitizeAIText(fallbackPrompt) || 'Saved Note';
+  }
+  if (clean.length > 50) {
+    clean = clean.slice(0, 47).trim() + '...';
+  }
+  return clean;
+}
+
 function validateAndSanitizeResult(result: AIInterpretationResult, prompt: string, now: Date): AIInterpretationResult {
   const validIntents: AIIntent[] = [
     'create_task',
@@ -138,6 +167,30 @@ function validateAndSanitizeResult(result: AIInterpretationResult, prompt: strin
 
   if (!validIntents.includes(result.intent)) {
     result.intent = 'suggest_choices';
+  }
+
+  if (result.intent === 'create_note') {
+    const isQuestionOrPlaceholder = !result.content ||
+      /\(Optional\)/i.test(result.content) ||
+      /Please provide/i.test(result.content) ||
+      result.content.endsWith('?');
+
+    if (isQuestionOrPlaceholder) {
+      result.content = prompt;
+    }
+
+    result.title = sanitizeTitle(result.title, prompt);
+  } else {
+    if (result.title) {
+      result.title = sanitizeTitle(result.title, prompt);
+    }
+    if (result.content) {
+      result.content = sanitizeAIText(result.content) || prompt;
+    }
+  }
+
+  if (result.description) {
+    result.description = sanitizeAIText(result.description);
   }
 
   if (result.intent === 'create_event' && (!result.startAt || !result.endAt)) {
@@ -279,10 +332,15 @@ function heuristicFallbackParse(
 
   // Note detection
   if (lower.includes('password') || lower.includes('wifi') || lower.includes('note:') || lower.includes('remember that')) {
+    let cleanTitle = 'Saved Note';
+    if (lower.includes('wifi')) cleanTitle = 'WiFi Info';
+    else if (lower.includes('password')) cleanTitle = 'Password Note';
+    else cleanTitle = prompt.slice(0, 30);
+
     return {
       intent: 'create_note',
       confidence: 0.9,
-      title: prompt.split(' ')[0] + ' ' + (prompt.split(' ')[1] || 'Note'),
+      title: cleanTitle,
       content: prompt,
       reasoning: 'Fallback heuristic: detected note / information keywords',
     };
