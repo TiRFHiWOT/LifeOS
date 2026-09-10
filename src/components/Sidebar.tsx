@@ -42,6 +42,12 @@ export default function Sidebar({ isOpen, onClose, userEmail, isGoogleConnected 
     { label: 'Reminders', href: '/reminders', icon: Bell },
   ];
 
+  const handleSignOut = async () => {
+    onClose();
+    await supabase.auth.signOut();
+    window.location.href = '/login';
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex">
       {/* Backdrop */}
@@ -107,22 +113,19 @@ export default function Sidebar({ isOpen, onClose, userEmail, isGoogleConnected 
             </div>
           )}
 
-          {userEmail && (
-            <div className="flex items-center justify-between px-2 pt-2">
-              <div className="min-w-0 pr-2">
-                <p className="text-xs text-slate-400 truncate">{userEmail}</p>
-              </div>
-              <form action="/auth/signout" method="post">
-                <button
-                  type="submit"
-                  className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span>Sign Out</span>
-                </button>
-              </form>
+          <div className="flex items-center justify-between px-2 pt-2">
+            <div className="min-w-0 pr-2">
+              <p className="text-xs text-slate-400 truncate">{userEmail || 'Signed in'}</p>
             </div>
-          )}
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition cursor-pointer"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Sign Out</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

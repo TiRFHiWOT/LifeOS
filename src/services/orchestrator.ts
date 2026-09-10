@@ -3,6 +3,7 @@ import { createTask } from '@/services/tasks';
 import { createNote } from '@/services/notes';
 import { createEvent } from '@/services/events';
 import { createReminder } from '@/services/reminders';
+import { createGoogleCalendarEvent } from '@/services/googleCalendar';
 
 export interface ActionResult {
   success: boolean;
@@ -185,6 +186,16 @@ export async function orchestrateAIAction(
         remind_at: interpretation.remindAt,
         status: 'pending',
       });
+
+      if (googleAccessToken) {
+        const endAtDate = new Date(new Date(interpretation.remindAt).getTime() + 15 * 60 * 1000).toISOString();
+        await createGoogleCalendarEvent(googleAccessToken, {
+          title: `🔔 Reminder: ${reminderTitle}`,
+          description: interpretation.description || `LifeOS Reminder scheduled for ${new Date(interpretation.remindAt).toLocaleTimeString()}`,
+          startAt: interpretation.remindAt,
+          endAt: endAtDate,
+        });
+      }
 
       return {
         success: true,

@@ -8,9 +8,18 @@ export async function GET(request: Request) {
 
   if (code) {
     const supabase = await createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
-      return NextResponse.redirect(`${origin}${next}`);
+      const response = NextResponse.redirect(`${origin}${next}`);
+      if (data.session?.provider_token) {
+        response.cookies.set('google_access_token', data.session.provider_token, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          maxAge: data.session.expires_in || 3600,
+          path: '/',
+        });
+      }
+      return response;
     }
   }
 

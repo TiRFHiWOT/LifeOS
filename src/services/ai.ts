@@ -243,7 +243,7 @@ function validateAndSanitizeResult(result: AIInterpretationResult, prompt: strin
 
   if (result.intent === 'unknown' || result.intent === 'suggest_choices') {
     result.intent = 'suggest_choices';
-    result.question = result.question || `What would you like me to do with "${prompt}"?`;
+    result.question = `How would you like to save or handle "${prompt}"?`;
     if (!result.choices || result.choices.length === 0) {
       result.choices = generateDefaultChoices(prompt, now);
     }
@@ -264,7 +264,7 @@ export function generateDefaultChoices(prompt: string, now: Date): AIChoice[] {
 
   return [
     {
-      label: `📝 Save as Note: "${titleCap}"`,
+      label: `Save as Note: "${titleCap}"`,
       type: 'note',
       interpretation: {
         intent: 'create_note',
@@ -274,17 +274,17 @@ export function generateDefaultChoices(prompt: string, now: Date): AIChoice[] {
       },
     },
     {
-      label: `☑️ Add Task: "Rest / Handle '${prompt}'"`,
+      label: `Add Task: "Handle '${titleCap}'"`,
       type: 'task',
       interpretation: {
         intent: 'create_task',
         confidence: 0.95,
-        title: `Rest / Handle '${prompt}'`,
+        title: `Handle '${titleCap}'`,
         dueAt: tomorrow.toISOString(),
       },
     },
     {
-      label: `📅 Schedule Event for Tomorrow`,
+      label: `Schedule Event for Tomorrow`,
       type: 'event',
       interpretation: {
         intent: 'create_event',
@@ -295,7 +295,7 @@ export function generateDefaultChoices(prompt: string, now: Date): AIChoice[] {
       },
     },
     {
-      label: `🔔 Set Reminder in 4 hours`,
+      label: `Set Reminder in 4 hours`,
       type: 'reminder',
       interpretation: {
         intent: 'create_reminder',

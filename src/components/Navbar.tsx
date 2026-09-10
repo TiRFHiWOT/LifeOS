@@ -69,12 +69,14 @@ export default function Navbar({ userEmail, isGoogleConnected }: NavbarProps) {
             )}
 
             {userEmail && (
-              <div 
-                className="w-7 h-7 rounded-full bg-indigo-600 text-white font-bold text-xs flex items-center justify-center shadow-sm"
-                title={userEmail}
+              <button 
+                type="button"
+                onClick={() => setIsSidebarOpen(true)}
+                className="w-7 h-7 rounded-full bg-indigo-600 text-white font-bold text-xs flex items-center justify-center shadow-sm hover:ring-2 hover:ring-indigo-400 transition cursor-pointer"
+                title={`${userEmail} - Click to open menu`}
               >
                 {userEmail[0].toUpperCase()}
-              </div>
+              </button>
             )}
           </div>
         </div>

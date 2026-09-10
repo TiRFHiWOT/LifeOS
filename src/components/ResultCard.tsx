@@ -81,6 +81,8 @@ export default function ResultCard({ result, onClear, onFollowUpSubmit, onExecut
                 ? 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
                 : 'border-purple-500/30 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20';
 
+            const cleanLabel = choice.label.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}]\s*/u, '');
+
             return (
               <button
                 key={index}
@@ -89,14 +91,14 @@ export default function ResultCard({ result, onClear, onFollowUpSubmit, onExecut
                     await onExecuteChoice(choice.interpretation);
                   }
                 }}
-                className={`p-3 rounded-xl border ${badgeColor} text-left transition flex items-center gap-3 group cursor-pointer shadow-sm`}
+                className={`p-3.5 rounded-xl border ${badgeColor} text-left transition flex items-center gap-3 group cursor-pointer shadow-sm`}
               >
-                <div className="p-2 rounded-lg bg-slate-950/50 border border-white/10 shrink-0">
+                <div className="p-2 rounded-lg bg-slate-950/60 border border-white/10 shrink-0">
                   <Icon className="w-4 h-4" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-semibold truncate text-slate-100">{choice.label}</p>
-                  <p className="text-[10px] opacity-75 capitalize">{choice.type}</p>
+                  <p className="text-xs font-semibold truncate text-slate-100">{cleanLabel}</p>
+                  <p className="text-[10px] opacity-75 uppercase tracking-wider font-mono mt-0.5">{choice.type}</p>
                 </div>
               </button>
             );
