@@ -11,51 +11,77 @@ import {
   List
 } from 'lucide-react';
 
-interface EventItem {
+interface CalendarDisplayItem {
   id: string;
   title: string;
   description?: string | null;
   start_at: string;
   end_at: string;
+  type: 'event' | 'task';
+  completed?: boolean;
   calendar_event_id?: string | null;
 }
 
 export default function CalendarView() {
-  const [events, setEvents] = useState<EventItem[]>([]);
+  const [items, setItems] = useState<CalendarDisplayItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const fetchEvents = async () => {
+  const fetchCalendarData = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/events');
-      if (res.ok) {
-        const data = await res.json();
-        setEvents(data.events || []);
-      }
+      const [eventsRes, tasksRes] = await Promise.all([
+        fetch('/api/events').then((r) => r.json()),
+        fetch('/api/tasks').then((r) => r.json()),
+      ]);
+
+      const formattedEvents: CalendarDisplayItem[] = (eventsRes.events || []).map((e: { id: string; title: string; description?: string; start_at: string; end_at: string; calendar_event_id?: string }) => ({
+        id: e.id,
+        title: e.title,
+        description: e.description,
+        start_at: e.start_at,
+        end_at: e.end_at,
+        type: 'event',
+        calendar_event_id: e.calendar_event_id,
+      }));
+
+      const formattedTasks: CalendarDisplayItem[] = (tasksRes.tasks || [])
+        .filter((t: { due_at?: string }) => Boolean(t.due_at))
+        .map((t: { id: string; title: string; description?: string; due_at: string; completed?: boolean }) => ({
+          id: t.id,
+          title: t.title,
+          description: t.description,
+          start_at: t.due_at,
+          end_at: t.due_at,
+          type: 'task',
+          completed: t.completed,
+        }));
+
+      setItems([...formattedEvents, ...formattedTasks]);
     } catch (err) {
-      console.error('Failed to fetch events:', err);
+      console.error('Failed to fetch calendar items:', err);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchEvents();
+    fetchCalendarData();
   }, []);
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, type: 'event' | 'task') => {
     setDeletingId(id);
     try {
-      const res = await fetch(`/api/events?id=${id}`, { method: 'DELETE' });
+      const endpoint = type === 'event' ? `/api/events?id=${id}` : `/api/tasks?id=${id}`;
+      const res = await fetch(endpoint, { method: 'DELETE' });
       if (res.ok) {
-        setEvents((prev) => prev.filter((e) => e.id !== id));
+        setItems((prev) => prev.filter((item) => item.id !== id));
       }
     } catch (err) {
-      console.error('Failed to delete event:', err);
+      console.error('Failed to delete calendar item:', err);
     } finally {
       setDeletingId(null);
     }
@@ -93,9 +119,9 @@ export default function CalendarView() {
     );
   };
 
-  // Filter events for a specific day
-  const getEventsForDay = (date: Date) => {
-    return events.filter((e) => {
+  // Filter items for a specific day
+  const getItemsForDay = (date: Date) => {
+    return items.filter((e) => {
       const eventStart = new Date(e.start_at);
       return isSameDay(eventStart, date);
     });
@@ -106,7 +132,7 @@ export default function CalendarView() {
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
 
-  const selectedDayEvents = getEventsForDay(selectedDate);
+  const selectedDayItems = getItemsForDay(selectedDate);
   const today = new Date();
 
   return (
@@ -119,7 +145,7 @@ export default function CalendarView() {
             Calendar
           </h1>
           <p className="text-xs text-slate-400 mt-1">
-            Manage your schedule, appointments, and synchronized Google Calendar events.
+            Manage your schedule, appointments, tasks, and synchronized Google Calendar events.
           </p>
         </div>
 
@@ -209,7 +235,7 @@ export default function CalendarView() {
                 const cellDate = new Date(year, month, dayNum);
                 const isSelected = isSameDay(cellDate, selectedDate);
                 const isCurrentToday = isSameDay(cellDate, today);
-                const dayEvents = getEventsForDay(cellDate);
+                const dayItems = getItemsForDay(cellDate);
 
                 return (
                   <button
@@ -227,24 +253,28 @@ export default function CalendarView() {
                       <span className={`text-xs ${isCurrentToday ? 'w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px]' : ''}`}>
                         {dayNum}
                       </span>
-                      {dayEvents.length > 0 && (
+                      {dayItems.length > 0 && (
                         <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
                       )}
                     </div>
 
                     {/* Event Preview Pills */}
                     <div className="hidden sm:block space-y-1 w-full overflow-hidden">
-                      {dayEvents.slice(0, 2).map((ev) => (
+                      {dayItems.slice(0, 2).map((ev) => (
                         <div
                           key={ev.id}
-                          className="truncate text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-medium"
+                          className={`truncate text-[10px] px-1.5 py-0.5 rounded border font-medium ${
+                            ev.type === 'task'
+                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                              : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                          }`}
                         >
                           {ev.title}
                         </div>
                       ))}
-                      {dayEvents.length > 2 && (
+                      {dayItems.length > 2 && (
                         <div className="text-[9px] text-slate-400 font-medium px-1">
-                          +{dayEvents.length - 2} more
+                          +{dayItems.length - 2} more
                         </div>
                       )}
                     </div>
@@ -267,28 +297,41 @@ export default function CalendarView() {
                     })}
                   </h3>
                   <p className="text-xs text-slate-400">
-                    {selectedDayEvents.length} {selectedDayEvents.length === 1 ? 'event' : 'events'} scheduled
+                    {selectedDayItems.length} {selectedDayItems.length === 1 ? 'item' : 'items'} scheduled
                   </p>
                 </div>
               </div>
 
-              {/* Selected Day Events List */}
+              {/* Selected Day Items List */}
               <div className="mt-4 space-y-3">
                 {loading ? (
-                  <div className="py-8 text-center text-xs text-slate-500">Loading events...</div>
-                ) : selectedDayEvents.length === 0 ? (
+                  <div className="py-8 text-center text-xs text-slate-500">Loading schedule...</div>
+                ) : selectedDayItems.length === 0 ? (
                   <div className="py-12 text-center text-slate-500 space-y-2">
                     <CalendarIcon className="w-8 h-8 mx-auto text-slate-600 stroke-[1.5]" />
-                    <p className="text-xs">No appointments on this date.</p>
+                    <p className="text-xs">No items scheduled on this date.</p>
                   </div>
                 ) : (
-                  selectedDayEvents.map((ev) => (
+                  selectedDayItems.map((ev) => (
                     <div
                       key={ev.id}
                       className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 hover:border-slate-700 transition flex items-start justify-between gap-3 group"
                     >
                       <div className="space-y-1 min-w-0">
-                        <h4 className="text-xs font-semibold text-slate-100 truncate">{ev.title}</h4>
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`text-[9px] px-1.5 py-0.2 rounded font-mono uppercase border ${
+                              ev.type === 'task'
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                            }`}
+                          >
+                            {ev.type}
+                          </span>
+                          <h4 className={`text-xs font-semibold truncate ${ev.completed ? 'line-through text-slate-400' : 'text-slate-100'}`}>
+                            {ev.title}
+                          </h4>
+                        </div>
                         {ev.description && (
                           <p className="text-[11px] text-slate-400 line-clamp-2">{ev.description}</p>
                         )}
@@ -298,21 +341,25 @@ export default function CalendarView() {
                             {new Date(ev.start_at).toLocaleTimeString('en-US', {
                               hour: '2-digit',
                               minute: '2-digit',
-                            })}{' '}
-                            -{' '}
-                            {new Date(ev.end_at).toLocaleTimeString('en-US', {
-                              hour: '2-digit',
-                              minute: '2-digit',
                             })}
+                            {ev.type === 'event' && (
+                              <>
+                                {' - '}
+                                {new Date(ev.end_at).toLocaleTimeString('en-US', {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </>
+                            )}
                           </span>
                         </div>
                       </div>
 
                       <button
-                        onClick={() => handleDelete(ev.id)}
+                        onClick={() => handleDelete(ev.id, ev.type)}
                         disabled={deletingId === ev.id}
                         className="text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition p-1"
-                        title="Delete event"
+                        title="Delete item"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -326,24 +373,37 @@ export default function CalendarView() {
       ) : (
         /* Agenda List View */
         <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-          <h2 className="text-sm font-semibold text-slate-300">All Scheduled Appointments</h2>
+          <h2 className="text-sm font-semibold text-slate-300">All Scheduled Appointments & Tasks</h2>
           {loading ? (
-            <div className="py-8 text-center text-xs text-slate-500">Loading events...</div>
-          ) : events.length === 0 ? (
+            <div className="py-8 text-center text-xs text-slate-500">Loading calendar...</div>
+          ) : items.length === 0 ? (
             <div className="py-12 text-center text-slate-500 space-y-2">
               <CalendarIcon className="w-8 h-8 mx-auto text-slate-600 stroke-[1.5]" />
-              <p className="text-xs">No upcoming appointments recorded.</p>
+              <p className="text-xs">No upcoming items recorded.</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {events.map((ev) => (
+              {items.map((ev) => (
                 <div
                   key={ev.id}
                   className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 hover:border-slate-700 transition flex items-center justify-between gap-4"
                 >
-                  <div className="space-y-1">
-                    <h4 className="text-sm font-semibold text-slate-100">{ev.title}</h4>
-                    {ev.description && <p className="text-xs text-slate-400">{ev.description}</p>}
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`text-[9px] px-1.5 py-0.2 rounded font-mono uppercase border ${
+                          ev.type === 'task'
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                            : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                        }`}
+                      >
+                        {ev.type}
+                      </span>
+                      <h4 className={`text-sm font-semibold truncate ${ev.completed ? 'line-through text-slate-400' : 'text-slate-100'}`}>
+                        {ev.title}
+                      </h4>
+                    </div>
+                    {ev.description && <p className="text-xs text-slate-400 line-clamp-2">{ev.description}</p>}
                     <div className="flex items-center gap-2 text-xs text-indigo-400 pt-1 font-medium">
                       <Clock className="w-3.5 h-3.5" />
                       <span>
@@ -356,20 +416,16 @@ export default function CalendarView() {
                         {new Date(ev.start_at).toLocaleTimeString('en-US', {
                           hour: '2-digit',
                           minute: '2-digit',
-                        })}{' '}
-                        -{' '}
-                        {new Date(ev.end_at).toLocaleTimeString('en-US', {
-                          hour: '2-digit',
-                          minute: '2-digit',
                         })}
                       </span>
                     </div>
                   </div>
 
                   <button
-                    onClick={() => handleDelete(ev.id)}
+                    onClick={() => handleDelete(ev.id, ev.type)}
                     disabled={deletingId === ev.id}
                     className="p-2 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition"
+                    title="Delete item"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -379,7 +435,6 @@ export default function CalendarView() {
           )}
         </div>
       )}
-
     </div>
   );
 }

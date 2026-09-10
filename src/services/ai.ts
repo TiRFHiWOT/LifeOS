@@ -12,13 +12,24 @@ export async function interpretNaturalLanguage(
   const currentDateStr = now.toISOString();
   const dayOfWeek = now.toLocaleDateString('en-US', { weekday: 'long' });
 
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const localTimeStr = now.toLocaleString('en-US', { timeZoneName: 'short' });
+
   const systemInstruction = `
 You are the natural language understanding engine for LifeOS, a personal administrative assistant.
 Analyze user inputs and map them to structured intents and parameters.
 
 Current reference time context:
-- Timestamp: ${currentDateStr}
+- Local Time: ${localTimeStr} (Timezone: ${timeZone})
+- ISO UTC Timestamp: ${currentDateStr}
 - Day of week: ${dayOfWeek}
+
+TIME SCHEDULING RULES:
+1. If the user specifies a time (e.g. "at 10 am", "on 10 am", "at 10:20 am", "at 3 pm") and that time HAS NOT YET PASSED today in local time, set the date/timestamp for TODAY (${now.toISOString().split('T')[0]}).
+2. Only set for tomorrow if the specified time has ALREADY passed today in local time, or if the user explicitly says "tomorrow".
+3. Keep titles concise and verbatim to the user's intent (e.g. "Go home at 10 AM"). NEVER append extra commentary, prompts, or text like "tomorrow morning. Please schedule..." into titles.
+4. If a single time is provided (e.g. "at 10:20 am") for a task or to-do (e.g. "i have something to do at 10:20 am"), map it to "create_task" with dueAt set to that timestamp.
+5. NEVER map to "missing_information" if a time is ALREADY present in the user's prompt.
 
 Possible Intents:
 1. "create_event": Scheduled calendar appointment or meeting tied to a specific time/date range. Required fields: title, startAt, endAt.
@@ -133,6 +144,8 @@ function sanitizeAIText(text?: string): string {
     .replace(/\(truncated\)/gi, '')
     .replace(/\(max length \d+ chars\)/gi, '')
     .replace(/\(Optional\)\s*Please.*/gi, '')
+    .replace(/\.?\s*Please schedule.*/gi, '')
+    .replace(/\.?\s*Please provide.*/gi, '')
     .replace(/--\s*This is a very long[\s\S]*$/i, '')
     .replace(/^["']|["']$/g, '')
     .trim();
@@ -193,10 +206,39 @@ function validateAndSanitizeResult(result: AIInterpretationResult, prompt: strin
     result.description = sanitizeAIText(result.description);
   }
 
-  if (result.intent === 'create_event' && (!result.startAt || !result.endAt)) {
-    result.intent = 'missing_information';
-    result.missingFields = result.missingFields || ['startTime'];
-    result.question = result.question || 'What time is the meeting or event?';
+  if (result.intent === 'create_event') {
+    if (result.startAt && !result.endAt) {
+      const startDate = new Date(result.startAt);
+      const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+      result.endAt = endDate.toISOString();
+    } else if (!result.startAt && !result.endAt) {
+      result.intent = 'missing_information';
+      result.missingFields = result.missingFields || ['startTime'];
+      result.question = result.question || 'What time is the meeting or event?';
+    }
+  }
+
+  if (result.intent === 'missing_information') {
+    const timeMatch = prompt.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+    if (timeMatch) {
+      let hour = parseInt(timeMatch[1], 10);
+      const minute = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
+      const ampm = timeMatch[3]?.toLowerCase();
+
+      if (ampm === 'pm' && hour < 12) hour += 12;
+      if (ampm === 'am' && hour === 12) hour = 0;
+
+      const targetDate = new Date(now);
+      targetDate.setHours(hour, minute, 0, 0);
+
+      if (targetDate.getTime() < now.getTime()) {
+        targetDate.setDate(targetDate.getDate() + 1);
+      }
+
+      result.intent = 'create_task';
+      result.title = sanitizeTitle(result.title || prompt, prompt);
+      result.dueAt = targetDate.toISOString();
+    }
   }
 
   if (result.intent === 'unknown' || result.intent === 'suggest_choices') {

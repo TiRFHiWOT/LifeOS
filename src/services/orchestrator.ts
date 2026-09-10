@@ -168,8 +168,13 @@ export async function orchestrateAIAction(
         };
       }
 
+      let reminderTitle = interpretation.title?.trim() || '';
+      if (!reminderTitle || ['reminder', 'reminder alert', 'task', 'scheduled item'].includes(reminderTitle.toLowerCase())) {
+        reminderTitle = interpretation.description?.trim() || 'Scheduled Reminder';
+      }
+
       const task = await createTask(userId, {
-        title: interpretation.title || 'Reminder Alert',
+        title: reminderTitle,
         description: interpretation.description || null,
         due_at: interpretation.remindAt,
         completed: false,

@@ -7,6 +7,7 @@ import EventList from '@/components/EventList';
 import NoteList from '@/components/NoteList';
 import ReminderList from '@/components/ReminderList';
 import QuickCreateModal from '@/components/QuickCreateModal';
+import ReminderAlertListener from '@/components/ReminderAlertListener';
 import { TaskItem, EventItem, NoteItem, ReminderItem } from '@/types';
 import { Database } from '@/types/database';
 
@@ -511,6 +512,9 @@ export default function Dashboard() {
         onClose={() => setIsModalOpen(false)}
         onSuccess={fetchAllData}
       />
+
+      {/* Global Real-Time Reminder Alert Engine */}
+      <ReminderAlertListener />
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import LifeOSLogo from '@/components/LifeOSLogo';
+import ReminderAlertListener from '@/components/ReminderAlertListener';
 import { Menu, Calendar } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
@@ -86,6 +87,9 @@ export default function Navbar({ userEmail, isGoogleConnected }: NavbarProps) {
         userEmail={userEmail}
         isGoogleConnected={isGoogleConnected}
       />
+
+      {/* Global Real-Time Reminder Alert Engine */}
+      <ReminderAlertListener />
     </>
   );
 }
