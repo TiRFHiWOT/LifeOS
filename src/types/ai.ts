@@ -3,8 +3,15 @@ export type AIIntent =
   | 'create_note'
   | 'create_event'
   | 'create_reminder'
+  | 'suggest_choices'
   | 'missing_information'
   | 'unknown';
+
+export interface AIChoice {
+  label: string;
+  type: 'task' | 'note' | 'event' | 'reminder';
+  interpretation: AIInterpretationResult;
+}
 
 export interface AIInterpretationResult {
   intent: AIIntent;
@@ -20,4 +27,5 @@ export interface AIInterpretationResult {
   missingFields?: string[];
   question?: string;
   reasoning?: string;
+  choices?: AIChoice[];
 }

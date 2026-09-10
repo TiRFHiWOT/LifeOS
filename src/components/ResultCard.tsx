@@ -2,12 +2,14 @@
 
 import { useState } from 'react';
 import { CheckCircle2, HelpCircle, Calendar, Bell, Check, FileText, CheckSquare, Sparkles } from 'lucide-react';
+import { AIChoice } from '@/types/ai';
 
 export interface ActionResultData {
   actionType: string;
   success: boolean;
   message?: string;
   question?: string;
+  choices?: AIChoice[];
   createdItem?: {
     id?: string;
     title?: string;
@@ -24,9 +26,10 @@ interface ResultCardProps {
   result: ActionResultData;
   onClear: () => void;
   onFollowUpSubmit?: (answer: string) => Promise<void>;
+  onExecuteChoice?: (interpretation: unknown) => Promise<void>;
 }
 
-export default function ResultCard({ result, onClear, onFollowUpSubmit }: ResultCardProps) {
+export default function ResultCard({ result, onClear, onFollowUpSubmit, onExecuteChoice }: ResultCardProps) {
   const [followUpInput, setFollowUpInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -40,7 +43,70 @@ export default function ResultCard({ result, onClear, onFollowUpSubmit }: Result
     setSubmitting(false);
   };
 
-  // Case 1: Missing Information Question
+  // Case 1: Interactive Choices Suggested (e.g. for "I am sick today")
+  if (result.actionType === 'choices_suggested' || (result.choices && result.choices.length > 0)) {
+    return (
+      <div className="w-full bg-slate-900 border border-indigo-500/40 rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-indigo-400 font-semibold text-xs tracking-wide uppercase">
+            <Sparkles className="w-4 h-4 text-indigo-400 animate-pulse" />
+            Assistant Suggestions
+          </div>
+          <button onClick={onClear} className="text-xs text-slate-500 hover:text-slate-300">
+            Dismiss
+          </button>
+        </div>
+
+        <p className="text-sm font-medium text-slate-100">
+          {result.question || result.message || 'How would you like me to handle this?'}
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+          {result.choices?.map((choice, index) => {
+            const Icon =
+              choice.type === 'task'
+                ? CheckSquare
+                : choice.type === 'event'
+                ? Calendar
+                : choice.type === 'reminder'
+                ? Bell
+                : FileText;
+
+            const badgeColor =
+              choice.type === 'task'
+                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
+                : choice.type === 'event'
+                ? 'border-indigo-500/30 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20'
+                : choice.type === 'reminder'
+                ? 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
+                : 'border-purple-500/30 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20';
+
+            return (
+              <button
+                key={index}
+                onClick={async () => {
+                  if (onExecuteChoice) {
+                    await onExecuteChoice(choice.interpretation);
+                  }
+                }}
+                className={`p-3 rounded-xl border ${badgeColor} text-left transition flex items-center gap-3 group cursor-pointer shadow-sm`}
+              >
+                <div className="p-2 rounded-lg bg-slate-950/50 border border-white/10 shrink-0">
+                  <Icon className="w-4 h-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold truncate text-slate-100">{choice.label}</p>
+                  <p className="text-[10px] opacity-75 capitalize">{choice.type}</p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // Case 2: Missing Information Question
   if (result.actionType === 'missing_information' || result.question) {
     return (
       <div className="w-full bg-indigo-950/40 border border-indigo-500/30 rounded-2xl p-5 shadow-xl space-y-3">
@@ -82,7 +148,7 @@ export default function ResultCard({ result, onClear, onFollowUpSubmit }: Result
     );
   }
 
-  // Case 2: Confident Event/Appointment Action
+  // Case 3: Confident Event/Appointment Action
   if (result.actionType === 'event_created' || (result.success && result.actionType === 'create_event')) {
     const item = result.createdItem;
     const startDate = item?.startAt ? new Date(item.startAt) : null;
@@ -128,7 +194,7 @@ export default function ResultCard({ result, onClear, onFollowUpSubmit }: Result
     );
   }
 
-  // Case 3: Successful Task
+  // Case 4: Successful Task
   if (result.actionType === 'task_created' || (result.success && result.actionType === 'create_task')) {
     const item = result.createdItem;
     const dueDate = item?.dueAt ? new Date(item.dueAt).toLocaleDateString(undefined, { weekday: 'long' }) : null;
@@ -161,7 +227,7 @@ export default function ResultCard({ result, onClear, onFollowUpSubmit }: Result
     );
   }
 
-  // Case 4: Note Saved
+  // Case 5: Note Saved
   if (result.actionType === 'note_created' || (result.success && result.actionType === 'create_note')) {
     const item = result.createdItem;
 

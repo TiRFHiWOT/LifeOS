@@ -1,4 +1,4 @@
-import { AIInterpretationResult } from '@/types/ai';
+import { AIInterpretationResult, AIChoice } from '@/types/ai';
 import { createTask } from '@/services/tasks';
 import { createNote } from '@/services/notes';
 import { createEvent } from '@/services/events';
@@ -7,11 +7,12 @@ import { createReminder } from '@/services/reminders';
 export interface ActionResult {
   success: boolean;
   intent: string;
-  actionType: 'task_created' | 'note_created' | 'event_created' | 'reminder_created' | 'missing_information' | 'none';
+  actionType: 'task_created' | 'note_created' | 'event_created' | 'reminder_created' | 'missing_information' | 'choices_suggested' | 'none';
   entity?: unknown;
   reminder?: unknown;
   question?: string;
   message?: string;
+  choices?: AIChoice[];
 }
 
 export async function orchestrateAIAction(
@@ -190,6 +191,16 @@ export async function orchestrateAIAction(
       };
     }
 
+    case 'suggest_choices': {
+      return {
+        success: true,
+        intent: interpretation.intent,
+        actionType: 'choices_suggested',
+        question: interpretation.question || 'What would you like me to do with this item?',
+        choices: interpretation.choices || [],
+      };
+    }
+
     case 'missing_information': {
       return {
         success: false,
@@ -201,10 +212,11 @@ export async function orchestrateAIAction(
 
     default: {
       return {
-        success: false,
-        intent: 'unknown',
-        actionType: 'none',
-        message: 'Could not recognize request intent. Try phrasing as a task, note, or event.',
+        success: true,
+        intent: 'suggest_choices',
+        actionType: 'choices_suggested',
+        question: interpretation.question || 'What would you like me to do with this item?',
+        choices: interpretation.choices || [],
       };
     }
   }

@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { AIInterpretationResult, AIIntent } from '../types/ai';
+import { AIInterpretationResult, AIIntent, AIChoice } from '../types/ai';
 
 export async function interpretNaturalLanguage(
   prompt: string,
@@ -25,15 +25,11 @@ Possible Intents:
 2. "create_task": Action item or to-do. Optional dueAt.
 3. "create_note": Personal info, passwords, reference notes, or general facts to store. Required fields: title, content.
 4. "create_reminder": Explicit alert request for a task or standalone timestamp. Required fields: remindAt or reminderMinutesBefore.
-5. "missing_information": The request intends to create an event/task/reminder but critical required info (like event time) is missing. DO NOT HALLUCINATE OR GUESS MISSING TIMES! Return question asking for missing detail.
-6. "unknown": Input is completely unrelated to assistant management.
+5. "suggest_choices": Use this when user input is ambiguous, a general status update (e.g., "I am sick today", "I feel tired", "Going to New York"), or could be handled in multiple ways. Return intent "suggest_choices" with a polite message in "question" and 2 to 4 structured choices in "choices". Each choice must have "label", "type" ('task'|'note'|'event'|'reminder'), and full "interpretation" payload object.
+6. "missing_information": The request intends a specific action but critical required info (like event time) is missing.
+7. "unknown": Input is completely unintelligible.
 
-Conversational Context Rules:
-- If conversation history is provided, COMBINE previous inputs and assistant questions with the latest user answer to fulfill the pending action.
-- Example: If previous input was "Meeting with Sarah tomorrow", assistant asked "What time is the meeting?", and latest input is "3 PM", combine them into an event titled "Meeting with Sarah" starting at 3 PM tomorrow.
-- NEVER guess or invent event times if the user did not specify a time. Return intent "missing_information" and ask a polite question.
-- Always output ISO 8601 format timestamps for dates/times (e.g., "2026-09-11T15:00:00.000Z").
-- If the user says "remind me X before", extract reminderMinutesBefore as an integer.
+Always output ISO 8601 format timestamps for dates/times (e.g., "2026-09-11T15:00:00.000Z").
 `;
 
   if (!apiKey || apiKey === 'your-gemini-api-key') {
@@ -66,6 +62,7 @@ Conversational Context Rules:
                 'create_note',
                 'create_event',
                 'create_reminder',
+                'suggest_choices',
                 'missing_information',
                 'unknown',
               ],
@@ -85,6 +82,31 @@ Conversational Context Rules:
             },
             question: { type: Type.STRING },
             reasoning: { type: Type.STRING },
+            choices: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  label: { type: Type.STRING },
+                  type: { type: Type.STRING, enum: ['task', 'note', 'event', 'reminder'] },
+                  interpretation: {
+                    type: Type.OBJECT,
+                    properties: {
+                      intent: { type: Type.STRING },
+                      title: { type: Type.STRING },
+                      content: { type: Type.STRING },
+                      description: { type: Type.STRING },
+                      startAt: { type: Type.STRING },
+                      endAt: { type: Type.STRING },
+                      dueAt: { type: Type.STRING },
+                      remindAt: { type: Type.STRING },
+                    },
+                    required: ['intent', 'title'],
+                  },
+                },
+                required: ['label', 'type', 'interpretation'],
+              },
+            },
           },
           required: ['intent', 'confidence'],
         },
@@ -96,25 +118,26 @@ Conversational Context Rules:
     }
 
     const parsed: AIInterpretationResult = JSON.parse(response.text);
-    return validateAndSanitizeResult(parsed);
+    return validateAndSanitizeResult(parsed, prompt, now);
   } catch (err: unknown) {
     console.error('Gemini AI API call failed, falling back to heuristic parser:', err);
     return heuristicFallbackParse(prompt, now, conversationHistory);
   }
 }
 
-function validateAndSanitizeResult(result: AIInterpretationResult): AIInterpretationResult {
+function validateAndSanitizeResult(result: AIInterpretationResult, prompt: string, now: Date): AIInterpretationResult {
   const validIntents: AIIntent[] = [
     'create_task',
     'create_note',
     'create_event',
     'create_reminder',
+    'suggest_choices',
     'missing_information',
     'unknown',
   ];
 
   if (!validIntents.includes(result.intent)) {
-    result.intent = 'unknown';
+    result.intent = 'suggest_choices';
   }
 
   if (result.intent === 'create_event' && (!result.startAt || !result.endAt)) {
@@ -123,7 +146,70 @@ function validateAndSanitizeResult(result: AIInterpretationResult): AIInterpreta
     result.question = result.question || 'What time is the meeting or event?';
   }
 
+  if (result.intent === 'unknown' || result.intent === 'suggest_choices') {
+    result.intent = 'suggest_choices';
+    result.question = result.question || `What would you like me to do with "${prompt}"?`;
+    if (!result.choices || result.choices.length === 0) {
+      result.choices = generateDefaultChoices(prompt, now);
+    }
+  }
+
   return result;
+}
+
+export function generateDefaultChoices(prompt: string, now: Date): AIChoice[] {
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const startAt = new Date(tomorrow);
+  startAt.setHours(15, 0, 0, 0);
+  const endAt = new Date(startAt.getTime() + 60 * 60 * 1000);
+
+  const remindAt = new Date(now.getTime() + 4 * 60 * 60 * 1000); // 4 hrs from now
+
+  const titleCap = prompt.charAt(0).toUpperCase() + prompt.slice(1);
+
+  return [
+    {
+      label: `📝 Save as Note: "${titleCap}"`,
+      type: 'note',
+      interpretation: {
+        intent: 'create_note',
+        confidence: 0.95,
+        title: titleCap,
+        content: prompt,
+      },
+    },
+    {
+      label: `☑️ Add Task: "Rest / Handle '${prompt}'"`,
+      type: 'task',
+      interpretation: {
+        intent: 'create_task',
+        confidence: 0.95,
+        title: `Rest / Handle '${prompt}'`,
+        dueAt: tomorrow.toISOString(),
+      },
+    },
+    {
+      label: `📅 Schedule Event for Tomorrow`,
+      type: 'event',
+      interpretation: {
+        intent: 'create_event',
+        confidence: 0.95,
+        title: titleCap,
+        startAt: startAt.toISOString(),
+        endAt: endAt.toISOString(),
+      },
+    },
+    {
+      label: `🔔 Set Reminder in 4 hours`,
+      type: 'reminder',
+      interpretation: {
+        intent: 'create_reminder',
+        confidence: 0.95,
+        title: titleCap,
+        remindAt: remindAt.toISOString(),
+      },
+    },
+  ];
 }
 
 function heuristicFallbackParse(
@@ -156,6 +242,24 @@ function heuristicFallbackParse(
         reasoning: 'Fallback heuristic: merged follow-up answer with previous conversation context',
       };
     }
+  }
+
+  // Flexible notification & reminder regex pattern
+  const isNotificationIntent = /(notify|remind|ping|alert|let me know|warn|tell me|wake me|heads up)/i.test(lower);
+  if (isNotificationIntent) {
+    const remindDate = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const hourMatch = lower.match(/(\d{1,2})\s*(pm|am)?/i);
+    const hour = hourMatch ? parseInt(hourMatch[1], 10) : 16;
+    const adjustedHour = lower.includes('pm') && hour < 12 ? hour + 12 : hour;
+    remindDate.setHours(adjustedHour, 0, 0, 0);
+
+    return {
+      intent: 'create_reminder',
+      confidence: 0.95,
+      title: prompt,
+      remindAt: remindDate.toISOString(),
+      reasoning: 'Parsed notification/reminder intent',
+    };
   }
 
   // Note detection
@@ -213,10 +317,12 @@ function heuristicFallbackParse(
     };
   }
 
+  // Fallback to interactive choice suggestion for ambiguous statements!
   return {
-    intent: 'create_task',
-    confidence: 0.7,
-    title: prompt,
-    reasoning: 'Fallback heuristic: default to task item',
+    intent: 'suggest_choices',
+    confidence: 0.8,
+    question: `What would you like me to do with "${prompt}"?`,
+    choices: generateDefaultChoices(prompt, now),
+    reasoning: 'Ambiguous prompt parsed into interactive choice suggestions',
   };
 }

@@ -137,6 +137,35 @@ export default function AssistantHome() {
     }
   };
 
+  const handleExecuteChoice = async (interpretation: unknown) => {
+    setLoading(true);
+    setResult(null);
+
+    try {
+      const response = await fetch('/api/ai/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          interpretation,
+          referenceDateISO: new Date().toISOString(),
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Execution failed');
+
+      const action = data.actionResult;
+      setResult(action);
+      setPrompt('');
+      fetchUpcomingTeaser();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to execute choice';
+      setResult({ actionType: 'error', success: false, message: msg });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     await handleSubmit(prompt);
@@ -210,12 +239,13 @@ export default function AssistantHome() {
         </button>
       </div>
 
-      {/* Direct AI Result / Confirmation Card */}
+      {/* Direct AI Result / Choice Selection Card */}
       {result && (
         <ResultCard
           result={result}
           onClear={() => setResult(null)}
           onFollowUpSubmit={handleSubmit}
+          onExecuteChoice={handleExecuteChoice}
         />
       )}
 
