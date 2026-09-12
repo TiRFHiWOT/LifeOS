@@ -25,11 +25,12 @@ Current reference time context:
 - Day of week: ${dayOfWeek}
 
 TIME SCHEDULING RULES:
-1. If the user specifies a time (e.g. "at 10 am", "on 10 am", "at 10:20 am", "at 3 pm") and that time HAS NOT YET PASSED today in local time, set the date/timestamp for TODAY (${now.toISOString().split('T')[0]}).
-2. Only set for tomorrow if the specified time has ALREADY passed today in local time, or if the user explicitly says "tomorrow".
-3. Keep titles concise and verbatim to the user's intent (e.g. "Go home at 10 AM"). NEVER append extra commentary, prompts, or text like "tomorrow morning. Please schedule..." into titles.
-4. If a single time is provided (e.g. "at 10:20 am") for a task or to-do (e.g. "i have something to do at 10:20 am"), map it to "create_task" with dueAt set to that timestamp.
-5. NEVER map to "missing_information" if a time is ALREADY present in the user's prompt.
+1. If the user specifies ANY relative time ("in 30 sec", "in 1 min", "after 5 mins", "in an hour") or absolute time ("at 3 pm"), calculate the exact ISO 8601 timestamp relative to the reference timestamp (${currentDateStr}).
+2. NEVER map to "suggest_choices" or "missing_information" if a time or relative duration is provided. Map to "create_task" (with dueAt set to that timestamp) or "create_reminder" (with remindAt set to that timestamp).
+3. If the user specifies a time today that has NOT yet passed, use TODAY (${now.toISOString().split('T')[0]}). Only use tomorrow if the time has already passed or user explicitly says "tomorrow".
+4. Keep titles concise and clean (e.g. "Do something" or "Scheduled Item"). NEVER append instructions or prompt text into titles.
+5. "suggest_choices" MUST ONLY be used when user input has NO time AND NO clear action (e.g., "I feel tired" or "New York").
+6. CRITICAL RULE FOR EVENTS & ACTIVITIES: If the user mentions any event, date, game, test, meeting, appointment, class, or scheduled activity WITHOUT an explicit time of day (e.g., "i have a date tomorrow", "i have a game tomorrow", "i have a test"), YOU MUST SET intent to "missing_information" and question to "What time is [the event/date/game]?". NEVER generate a default startAt/endAt time!
 
 Possible Intents:
 1. "create_event": Scheduled calendar appointment or meeting tied to a specific time/date range. Required fields: title, startAt, endAt.
@@ -49,7 +50,7 @@ Always output ISO 8601 format timestamps for dates/times (e.g., "2026-09-11T15:0
 
   try {
     const ai = new GoogleGenAI({ apiKey });
-    const model = 'gemini-2.5-flash';
+    const model = 'gemini-2.0-flash';
 
     let fullPrompt = prompt;
     if (conversationHistory && conversationHistory.length > 0) {
@@ -167,6 +168,32 @@ function sanitizeTitle(title?: string, fallbackPrompt?: string): string {
   return clean;
 }
 
+export function hasExplicitTimeOfDay(text: string): boolean {
+  const lower = text.toLowerCase();
+  if (/\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/i.test(lower)) return true;
+  if (/\b(?:at\s+)?(?:[01]?\d|2[0-3]):[0-5]\d\b/i.test(lower)) return true;
+  if (/\bat\s+\d{1,2}\b/i.test(lower)) return true;
+  if (/(?:in|after|for)\s+(?:\d+|a|an|one)\s*(?:sec|second|min|minute|hr|hour)s?\b/i.test(lower)) return true;
+  // Time-of-day words count as explicit time signals
+  if (/\b(morning|afternoon|evening|night|midnight|noon|midday)\b/i.test(lower)) return true;
+  return false;
+}
+
+/**
+ * Maps a time-of-day word to a default hour (24h).
+ * morning=9, afternoon=14, evening=18, night=21, noon=12, midnight=0
+ */
+export function timeOfDayWordToHour(text: string): number | null {
+  const lower = text.toLowerCase();
+  if (/\bmorning\b/.test(lower)) return 9;
+  if (/\bnoon\b|\bmidday\b/.test(lower)) return 12;
+  if (/\bafternoon\b/.test(lower)) return 14;
+  if (/\bevening\b/.test(lower)) return 18;
+  if (/\bnight\b/.test(lower)) return 21;
+  if (/\bmidnight\b/.test(lower)) return 0;
+  return null;
+}
+
 function validateAndSanitizeResult(result: AIInterpretationResult, prompt: string, now: Date): AIInterpretationResult {
   const validIntents: AIIntent[] = [
     'create_task',
@@ -207,37 +234,19 @@ function validateAndSanitizeResult(result: AIInterpretationResult, prompt: strin
   }
 
   if (result.intent === 'create_event') {
-    if (result.startAt && !result.endAt) {
-      const startDate = new Date(result.startAt);
-      const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
-      result.endAt = endDate.toISOString();
-    } else if (!result.startAt && !result.endAt) {
+    // If prompt lacks an explicit time of day, DO NOT use a default time! Ask the user!
+    if (!hasExplicitTimeOfDay(prompt)) {
+      const cleanTitle = sanitizeTitle(result.title, prompt);
       result.intent = 'missing_information';
-      result.missingFields = result.missingFields || ['startTime'];
-      result.question = result.question || 'What time is the meeting or event?';
-    }
-  }
-
-  if (result.intent === 'missing_information') {
-    const timeMatch = prompt.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
-    if (timeMatch) {
-      let hour = parseInt(timeMatch[1], 10);
-      const minute = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
-      const ampm = timeMatch[3]?.toLowerCase();
-
-      if (ampm === 'pm' && hour < 12) hour += 12;
-      if (ampm === 'am' && hour === 12) hour = 0;
-
-      const targetDate = new Date(now);
-      targetDate.setHours(hour, minute, 0, 0);
-
-      if (targetDate.getTime() < now.getTime()) {
-        targetDate.setDate(targetDate.getDate() + 1);
+      result.title = cleanTitle;
+      result.missingFields = ['startTime'];
+      result.question = `What time is "${cleanTitle}"?`;
+    } else {
+      if (result.startAt && !result.endAt) {
+        const startDate = new Date(result.startAt);
+        const endDate = new Date(startDate.getTime() + 60 * 60 * 1000);
+        result.endAt = endDate.toISOString();
       }
-
-      result.intent = 'create_task';
-      result.title = sanitizeTitle(result.title || prompt, prompt);
-      result.dueAt = targetDate.toISOString();
     }
   }
 
@@ -307,6 +316,100 @@ export function generateDefaultChoices(prompt: string, now: Date): AIChoice[] {
   ];
 }
 
+export function parseTimeFromText(text: string, now: Date): Date | null {
+  const lower = text.toLowerCase();
+
+  // Relative seconds e.g. "30 sec", "in 30 seconds", "after 10 sec", "a second"
+  const secMatch = lower.match(/(?:in|after|for)?\s*(\d+)\s*(?:secs?|seconds?)/i);
+  if (secMatch) {
+    const secs = parseInt(secMatch[1], 10);
+    return new Date(now.getTime() + secs * 1000);
+  }
+
+  const oneSecMatch = lower.match(/(?:in|after|for)\s+(?:a|an|one|1)\s*(?:sec|second)/i);
+  if (oneSecMatch) {
+    return new Date(now.getTime() + 30 * 1000);
+  }
+
+  // Relative minutes e.g. "30 min", "in 5 minutes", "after a minute"
+  const minMatch = lower.match(/(?:in|after|for)?\s*(\d+)\s*(?:mins?|minutes?)/i);
+  if (minMatch) {
+    const mins = parseInt(minMatch[1], 10);
+    return new Date(now.getTime() + mins * 60 * 1000);
+  }
+
+  const oneMinMatch = lower.match(/(?:in|after|for)\s+(?:a|an|one|1)\s*(?:min|minute)/i);
+  if (oneMinMatch) {
+    return new Date(now.getTime() + 1 * 60 * 1000);
+  }
+
+  if (lower.includes('half an hour')) {
+    return new Date(now.getTime() + 30 * 60 * 1000);
+  }
+
+  // Relative hours e.g. "in 2 hours", "after 1 hour", "an hour"
+  const hourRelMatch = lower.match(/(?:in|after|for)?\s*(\d+)\s*(?:hrs?|hours?)/i);
+  if (hourRelMatch) {
+    const hrs = parseInt(hourRelMatch[1], 10);
+    return new Date(now.getTime() + hrs * 60 * 60 * 1000);
+  }
+
+  const oneHourMatch = lower.match(/(?:in|after|for)\s+(?:a|an|one|1)\s*(?:hr|hour)/i);
+  if (oneHourMatch) {
+    return new Date(now.getTime() + 60 * 60 * 1000);
+  }
+
+  // Explicit time e.g. "at 8:30 pm", "at 3 pm", "3pm"
+  const timeMatch = lower.match(/(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(pm|am)/i);
+  if (timeMatch) {
+    let hour = parseInt(timeMatch[1], 10);
+    const minute = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
+    const ampm = timeMatch[3]?.toLowerCase();
+
+    if (ampm === 'pm' && hour < 12) hour += 12;
+    if (ampm === 'am' && hour === 12) hour = 0;
+
+    const target = new Date(now);
+    target.setHours(hour, minute, 0, 0);
+
+    if (target.getTime() <= now.getTime()) {
+      target.setDate(target.getDate() + 1);
+    }
+    return target;
+  }
+
+  // 24-hour format e.g. "at 16:00"
+  const time24Match = lower.match(/(?:at\s+)?([01]?\d|2[0-3]):([0-5]\d)/i);
+  if (time24Match) {
+    const hour = parseInt(time24Match[1], 10);
+    const minute = parseInt(time24Match[2], 10);
+
+    const target = new Date(now);
+    target.setHours(hour, minute, 0, 0);
+
+    if (target.getTime() <= now.getTime()) {
+      target.setDate(target.getDate() + 1);
+    }
+    return target;
+  }
+
+  return null;
+}
+
+export function cleanReminderTitle(prompt: string): string {
+  let clean = prompt
+    .replace(/^(please\s+)?(remind|notify|ping|alert|warn)\s+(me\s+)?/i, '')
+    .replace(/(?:in|after|for)?\s*(?:\d+|a|an|one)\s*(?:mins?|minutes?|secs?|seconds?|hrs?|hours?)/gi, '')
+    .replace(/(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:pm|am)?/gi, '')
+    .replace(/^(to\s+|about\s+|that\s+)/i, '')
+    .trim();
+
+  if (!clean || clean.length < 2) {
+    return 'Scheduled Reminder';
+  }
+  return clean.charAt(0).toUpperCase() + clean.slice(1);
+}
+
 function heuristicFallbackParse(
   prompt: string,
   now: Date,
@@ -316,25 +419,66 @@ function heuristicFallbackParse(
 
   // If there's conversation history where assistant asked for time, merge context!
   if (conversationHistory && conversationHistory.length > 0) {
-    const lastHistory = conversationHistory[conversationHistory.length - 1];
+    const lastAssistantMsg = [...conversationHistory].reverse().find((h) => h.role === 'assistant');
     const firstUserMsg = conversationHistory.find((h) => h.role === 'user')?.text || 'Event';
+    const assistantText = lastAssistantMsg?.text?.toLowerCase() || '';
 
-    if (lastHistory.text.toLowerCase().includes('time') || lower.includes('pm') || lower.includes('am') || lower.includes('at')) {
-      const start = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-      const hourMatch = lower.match(/(\d{1,2})/);
-      const hour = hourMatch ? parseInt(hourMatch[1], 10) : 15;
-      const adjustedHour = lower.includes('pm') && hour < 12 ? hour + 12 : hour;
-      start.setHours(adjustedHour, 0, 0, 0);
+    const askedForTime = assistantText.includes('time') || assistantText.includes('what time') || assistantText.includes('when');
+    const looksLikeTimeAnswer = /\d/.test(lower) || lower.includes('pm') || lower.includes('am') || lower.includes('at') ||
+      /\b(morning|afternoon|evening|night|noon|midnight)\b/.test(lower);
+
+    if (askedForTime && looksLikeTimeAnswer) {
+      // Extract time-of-day context from previous user messages to disambiguate AM/PM
+      const allUserText = conversationHistory.filter((h) => h.role === 'user').map((h) => h.text).join(' ').toLowerCase();
+      const prevTodHour = timeOfDayWordToHour(allUserText);
+
+      const hourMatch = lower.match(/(\d{1,2})(?::(\d{2}))?/);
+      let hour = hourMatch ? parseInt(hourMatch[1], 10) : (prevTodHour ?? 9);
+      let minute = hourMatch?.[2] ? parseInt(hourMatch[2], 10) : 0;
+
+      if (lower.includes('pm') && hour < 12) {
+        hour += 12;
+      } else if (lower.includes('am') && hour === 12) {
+        hour = 0;
+      } else if (!lower.includes('pm') && !lower.includes('am')) {
+        // No explicit AM/PM — use context from earlier messages
+        if (prevTodHour !== null && prevTodHour < 12) {
+          // Previous context was morning → keep hour as-is (AM)
+        } else if (prevTodHour !== null && prevTodHour >= 12) {
+          // Previous context was afternoon/evening → push to PM if ambiguous
+          if (hour >= 1 && hour <= 6) hour += 12;
+        } else {
+          // No context at all: hours 1-6 are ambiguous, default to AM for early hours
+          // (people saying "4" usually mean 4 AM if no prior afternoon context)
+        }
+      }
+
+      // Determine date: check if previous user message mentioned tomorrow
+      const mentionedTomorrow = allUserText.includes('tomorrow');
+      const start = new Date(now);
+      if (mentionedTomorrow) start.setDate(start.getDate() + 1);
+      start.setHours(hour, minute, 0, 0);
+
+      // If resolved time has already passed today and tomorrow wasn't mentioned, move to tomorrow
+      if (start.getTime() <= now.getTime() && !mentionedTomorrow) {
+        start.setDate(start.getDate() + 1);
+      }
 
       const end = new Date(start.getTime() + 60 * 60 * 1000);
+
+      // Extract event noun title from original user message
+      const eventNounMatch = firstUserMsg.match(/\b(appointment|dentist|doctor|meeting|flight|date|interview|test|party|dinner|lunch|concert|event|game|class|match|show|movie|hangout)\b/i);
+      const title = eventNounMatch
+        ? eventNounMatch[1].charAt(0).toUpperCase() + eventNounMatch[1].slice(1)
+        : firstUserMsg.charAt(0).toUpperCase() + firstUserMsg.slice(1);
 
       return {
         intent: 'create_event',
         confidence: 0.9,
-        title: firstUserMsg,
+        title,
         startAt: start.toISOString(),
         endAt: end.toISOString(),
-        reasoning: 'Fallback heuristic: merged follow-up answer with previous conversation context',
+        reasoning: 'Fallback heuristic: merged follow-up time answer with previous conversation context',
       };
     }
   }
@@ -342,31 +486,18 @@ function heuristicFallbackParse(
   // Flexible notification & reminder regex pattern
   const isNotificationIntent = /(notify|remind|ping|alert|let me know|warn|tell me|wake me|heads up)/i.test(lower);
   if (isNotificationIntent) {
-    let remindDate = new Date(now);
-
-    // Check relative minutes e.g. "in 30 minutes"
-    const relMinMatch = lower.match(/in\s+(\d+)\s+min/i);
-    if (relMinMatch) {
-      const mins = parseInt(relMinMatch[1], 10);
-      remindDate = new Date(now.getTime() + mins * 60 * 1000);
-    } else {
-      // Check time e.g. "4 PM" or "16:00"
-      const hourMatch = lower.match(/(\d{1,2})(:\d{2})?\s*(pm|am)?/i);
-      let hour = hourMatch ? parseInt(hourMatch[1], 10) : 16;
-      if (lower.includes('pm') && hour < 12) hour += 12;
-      if (lower.includes('am') && hour === 12) hour = 0;
-
-      // If specified time has already passed today, set for tomorrow
-      if (hour < now.getHours()) {
-        remindDate.setDate(remindDate.getDate() + 1);
-      }
-      remindDate.setHours(hour, 0, 0, 0);
+    let remindDate = parseTimeFromText(prompt, now);
+    if (!remindDate) {
+      // Default to 1 hour from now if no time or relative duration specified
+      remindDate = new Date(now.getTime() + 60 * 60 * 1000);
     }
+
+    const title = cleanReminderTitle(prompt);
 
     return {
       intent: 'create_reminder',
       confidence: 0.95,
-      title: prompt,
+      title,
       remindAt: remindDate.toISOString(),
       reasoning: 'Parsed notification/reminder intent',
     };
@@ -388,56 +519,114 @@ function heuristicFallbackParse(
     };
   }
 
-  // Event detection
-  if (lower.includes('appointment') || lower.includes('dentist') || lower.includes('meeting') || lower.includes('flight')) {
-    const hasTime = /\b(\d{1,2}(:\d{2})?\s*(am|pm)?)\b/i.test(prompt) || lower.includes('at ');
-    if (!hasTime) {
+  // Event / Appointment / Date / Game / Class detection
+  const eventWordMatch = lower.match(/\b(appointment|dentist|doctor|meeting|flight|date|interview|test|party|dinner|lunch|concert|event|game|class|match|show|movie|hangout)\b/i);
+  const isEventWord = !!eventWordMatch;
+  if (isEventWord) {
+    // Build a clean, short title from the matched event noun
+    const eventNoun = eventWordMatch![1];
+    const nounTitle = eventNoun.charAt(0).toUpperCase() + eventNoun.slice(1);
+
+    if (!hasExplicitTimeOfDay(prompt)) {
       return {
         intent: 'missing_information',
-        confidence: 0.85,
-        title: prompt,
+        confidence: 0.95,
+        title: nounTitle,
         missingFields: ['startTime'],
-        question: 'What time is the appointment?',
-        reasoning: 'Fallback heuristic: detected meeting/event without specific time',
+        question: `What time is your ${eventNoun}?`,
+        reasoning: 'Detected event/date/appointment without explicit time of day',
       };
     }
 
-    const start = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-    start.setHours(15, 0, 0, 0);
-    const end = new Date(start.getTime() + 60 * 60 * 1000);
+    // Try explicit numeric time first
+    const timeMatch = prompt.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+    // Try time-of-day word (morning, afternoon, etc.)
+    const todHour = timeOfDayWordToHour(prompt);
 
-    const hasReminder = lower.includes('remind me');
+    let hour: number;
+    let minute = 0;
+    if (timeMatch) {
+      hour = parseInt(timeMatch[1], 10);
+      minute = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
+      const ampm = timeMatch[3]?.toLowerCase();
+      if (ampm === 'pm' && hour < 12) hour += 12;
+      if (ampm === 'am' && hour === 12) hour = 0;
+      // If no AM/PM given and hour is ambiguous (1-6), prefer the time-of-day context
+      if (!ampm && hour >= 1 && hour <= 6 && todHour !== null) {
+        hour = todHour < 12 ? hour : hour + 12; // morning → keep as AM; afternoon/evening → add 12
+      }
+    } else if (todHour !== null) {
+      hour = todHour;
+    } else {
+      hour = 9; // safe default
+    }
+
+    const start = new Date(now);
+    if (lower.includes('tomorrow')) {
+      start.setDate(start.getDate() + 1);
+    } else if (lower.includes('friday')) {
+      const day = start.getDay();
+      const diff = (5 - day + 7) % 7 || 7;
+      start.setDate(start.getDate() + diff);
+    }
+    start.setHours(hour, minute, 0, 0);
+
+    if (start.getTime() < now.getTime() && !lower.includes('tomorrow') && !lower.includes('friday')) {
+      start.setDate(start.getDate() + 1);
+    }
+
+    const end = new Date(start.getTime() + 60 * 60 * 1000);
+    const hasReminder = lower.includes('remind') || lower.includes('alert') || lower.includes('let me know');
     const reminderMinutesBefore = hasReminder ? 60 : undefined;
 
     return {
       intent: 'create_event',
-      confidence: 0.85,
-      title: prompt.split('.')[0],
+      confidence: 0.9,
+      title: nounTitle,
       startAt: start.toISOString(),
       endAt: end.toISOString(),
       reminderMinutesBefore,
-      reasoning: 'Fallback heuristic: parsed event with time and reminder request',
+      reasoning: 'Parsed event start time from prompt context',
     };
   }
 
-  // Task detection
-  if (lower.includes('buy') || lower.includes('todo') || lower.includes('clean') || lower.includes('submit') || lower.includes('task')) {
-    const due = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  // General Task / Scheduled Item detection (e.g. "i have something to do in 30 sec", "do X at 3pm", "buy groceries")
+  const parsedTime = parseTimeFromText(prompt, now);
+  const isTaskAction = /(do|have|need|got|must|should|buy|todo|clean|submit|call|go|get|prepare|finish|task)/i.test(lower);
+
+  if (parsedTime || isTaskAction) {
+    const due = parsedTime || new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const title = prompt.length > 50 ? prompt.slice(0, 47).trim() + '...' : prompt;
+
+    // If time is short (e.g. within 10 minutes), create a reminder alert immediately
+    const isShortTime = parsedTime && (parsedTime.getTime() - now.getTime() <= 10 * 60 * 1000);
+
+    if (isShortTime) {
+      return {
+        intent: 'create_reminder',
+        confidence: 0.95,
+        title: cleanReminderTitle(prompt),
+        remindAt: due.toISOString(),
+        reasoning: 'Parsed short-duration task/reminder intent',
+      };
+    }
+
     return {
       intent: 'create_task',
-      confidence: 0.88,
-      title: prompt,
+      confidence: 0.9,
+      title: title.charAt(0).toUpperCase() + title.slice(1),
       dueAt: due.toISOString(),
-      reasoning: 'Fallback heuristic: parsed to-do task',
+      remindAt: due.toISOString(),
+      reasoning: 'Parsed task intent with scheduled time',
     };
   }
 
-  // Fallback to interactive choice suggestion for ambiguous statements!
+  // Fallback to interactive choice suggestion ONLY for ambiguous non-time phrases (e.g. "feeling tired" or "new york")
   return {
     intent: 'suggest_choices',
     confidence: 0.8,
     question: `What would you like me to do with "${prompt}"?`,
     choices: generateDefaultChoices(prompt, now),
-    reasoning: 'Ambiguous prompt parsed into interactive choice suggestions',
+    reasoning: 'Ambiguous statement parsed into interactive choice suggestions',
   };
 }

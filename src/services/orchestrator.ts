@@ -130,22 +130,25 @@ export async function orchestrateAIAction(
       );
 
       let reminderEntity = null;
-      if (interpretation.remindAt || interpretation.reminderMinutesBefore) {
-        let remindAtStr = interpretation.remindAt;
+      let remindAtStr = interpretation.remindAt;
 
-        if (!remindAtStr && interpretation.startAt && interpretation.reminderMinutesBefore) {
+      if (!remindAtStr && interpretation.startAt) {
+        if (interpretation.reminderMinutesBefore) {
           const startDate = new Date(interpretation.startAt);
           const remindDate = new Date(startDate.getTime() - interpretation.reminderMinutesBefore * 60 * 1000);
           remindAtStr = remindDate.toISOString();
+        } else {
+          // Default: trigger reminder alert at the appointment start time!
+          remindAtStr = interpretation.startAt;
         }
+      }
 
-        if (remindAtStr) {
-          reminderEntity = await createReminder(userId, {
-            event_id: event.id,
-            remind_at: remindAtStr,
-            status: 'pending',
-          });
-        }
+      if (remindAtStr) {
+        reminderEntity = await createReminder(userId, {
+          event_id: event.id,
+          remind_at: remindAtStr,
+          status: 'pending',
+        });
       }
 
       const googleMsg = event.calendar_event_id ? ' (synced to Google Calendar)' : '';

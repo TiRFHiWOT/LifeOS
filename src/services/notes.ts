@@ -29,34 +29,20 @@ export async function createNote(userId: string, note: Omit<NoteInsert, 'user_id
     throw new Error('Note content is required');
   }
 
-  try {
-    const supabase = await createClient();
-    const { data, error } = await supabase
-      .from('notes')
-      .insert({
-        ...note,
-        user_id: userId,
-        title: note.title.trim(),
-        content: note.content.trim(),
-      })
-      .select()
-      .single();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('notes')
+    .insert({
+      ...note,
+      user_id: userId,
+      title: note.title.trim(),
+      content: note.content.trim(),
+    })
+    .select()
+    .single();
 
-    if (!error && data) return data;
-    throw new Error(error?.message || 'Database insert failed');
-  } catch (err: unknown) {
-    if (process.env.NODE_ENV === 'development' || !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('your-project') || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder')) {
-      return {
-        id: 'demo-note-' + Date.now(),
-        user_id: userId,
-        title: note.title.trim(),
-        content: note.content.trim(),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-    }
-    throw err;
-  }
+  if (error) throw new Error(error.message || 'Database insert failed for note');
+  return data;
 }
 
 export async function updateNote(userId: string, noteId: string, updates: Omit<NoteUpdate, 'user_id' | 'id'>): Promise<NoteRow> {

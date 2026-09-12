@@ -4,12 +4,22 @@ import { Database } from '@/types/database';
 type ReminderRow = Database['public']['Tables']['reminders']['Row'];
 type ReminderInsert = Database['public']['Tables']['reminders']['Insert'];
 
-export async function getReminders(userId: string): Promise<ReminderRow[]> {
+export async function getReminders(userId: string): Promise<any[]> {
   try {
     const supabase = await createClient();
     const { data, error } = await supabase
       .from('reminders')
-      .select('*')
+      .select(`
+        id,
+        user_id,
+        task_id,
+        event_id,
+        remind_at,
+        status,
+        created_at,
+        tasks ( id, title, description, due_at ),
+        events ( id, title, description, start_at, end_at )
+      `)
       .eq('user_id', userId)
       .order('remind_at', { ascending: true });
 
@@ -28,34 +38,19 @@ export async function createReminder(userId: string, reminder: Omit<ReminderInse
     throw new Error('Reminder remind_at timestamp is required');
   }
 
-  try {
-    const supabase = await createClient();
-    const { data, error } = await supabase
-      .from('reminders')
-      .insert({
-        ...reminder,
-        user_id: userId,
-        status: reminder.status || 'pending',
-      })
-      .select()
-      .single();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('reminders')
+    .insert({
+      ...reminder,
+      user_id: userId,
+      status: reminder.status || 'pending',
+    })
+    .select()
+    .single();
 
-    if (!error && data) return data;
-    throw new Error(error?.message || 'Database insert failed');
-  } catch (err: unknown) {
-    if (process.env.NODE_ENV === 'development' || !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('your-project') || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder')) {
-      return {
-        id: 'demo-reminder-' + Date.now(),
-        user_id: userId,
-        task_id: reminder.task_id || null,
-        event_id: reminder.event_id || null,
-        remind_at: reminder.remind_at,
-        status: reminder.status || 'pending',
-        created_at: new Date().toISOString(),
-      };
-    }
-    throw err;
-  }
+  if (error) throw new Error(error.message || 'Database insert failed for reminder');
+  return data;
 }
 
 export async function updateReminderStatus(userId: string, reminderId: string, status: 'pending' | 'sent' | 'failed'): Promise<ReminderRow> {

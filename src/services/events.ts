@@ -50,37 +50,20 @@ export async function createEvent(
     }
   }
 
-  try {
-    const supabase = await createClient();
-    const { data, error } = await supabase
-      .from('events')
-      .insert({
-        ...event,
-        user_id: userId,
-        title: event.title.trim(),
-        calendar_event_id: calendarEventId,
-      })
-      .select()
-      .single();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('events')
+    .insert({
+      ...event,
+      user_id: userId,
+      title: event.title.trim(),
+      calendar_event_id: calendarEventId,
+    })
+    .select()
+    .single();
 
-    if (!error && data) return data;
-    throw new Error(error?.message || 'Database insert failed');
-  } catch (err: unknown) {
-    if (process.env.NODE_ENV === 'development' || !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('your-project') || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder')) {
-      return {
-        id: 'demo-event-' + Date.now(),
-        user_id: userId,
-        title: event.title.trim(),
-        description: event.description || null,
-        start_at: event.start_at,
-        end_at: event.end_at,
-        calendar_event_id: calendarEventId,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-    }
-    throw err;
-  }
+  if (error) throw new Error(error.message || 'Database insert failed for event');
+  return data;
 }
 
 export async function updateEvent(userId: string, eventId: string, updates: Omit<EventUpdate, 'user_id' | 'id'>): Promise<EventRow> {

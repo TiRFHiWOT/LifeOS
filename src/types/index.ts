@@ -32,4 +32,6 @@ export interface ReminderItem extends BaseEntity {
   eventId?: string;
   remindAt: string;
   status: 'pending' | 'sent' | 'failed';
+  title?: string;
+  description?: string;
 }

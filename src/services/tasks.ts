@@ -26,35 +26,19 @@ export async function createTask(userId: string, task: Omit<TaskInsert, 'user_id
     throw new Error('Task title is required');
   }
 
-  try {
-    const supabase = await createClient();
-    const { data, error } = await supabase
-      .from('tasks')
-      .insert({
-        ...task,
-        user_id: userId,
-        title: task.title.trim(),
-      })
-      .select()
-      .single();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('tasks')
+    .insert({
+      ...task,
+      user_id: userId,
+      title: task.title.trim(),
+    })
+    .select()
+    .single();
 
-    if (!error && data) return data;
-    throw new Error(error?.message || 'Database insert failed');
-  } catch (err: unknown) {
-    if (process.env.NODE_ENV === 'development' || !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('your-project') || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder')) {
-      return {
-        id: 'demo-task-' + Date.now(),
-        user_id: userId,
-        title: task.title.trim(),
-        description: task.description || null,
-        due_at: task.due_at || null,
-        completed: task.completed ?? false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-    }
-    throw err;
-  }
+  if (error) throw new Error(error.message || 'Database insert failed for task');
+  return data;
 }
 
 export async function updateTask(userId: string, taskId: string, updates: Omit<TaskUpdate, 'user_id' | 'id'>): Promise<TaskRow> {

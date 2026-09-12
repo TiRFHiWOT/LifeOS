@@ -44,10 +44,16 @@ export default function ReminderList({ reminders, onDelete, loading }: ReminderL
               <Bell className="w-4 h-4 text-amber-400" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-xs sm:text-sm font-semibold text-slate-100 truncate">
+              <h4 className="text-sm font-bold text-slate-100 truncate">
+                {reminder.title || 'Scheduled Reminder'}
+              </h4>
+              {reminder.description && (
+                <p className="text-xs text-slate-400 truncate mt-0.5">{reminder.description}</p>
+              )}
+              <p className="text-xs font-medium text-amber-400 mt-1">
                 Alert set for {new Date(reminder.remindAt).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
               </p>
-              <div className="flex items-center gap-2 mt-1 flex-wrap">
+              <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                 <span
                   className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-medium uppercase border flex items-center gap-1 ${
                     reminder.status === 'sent'

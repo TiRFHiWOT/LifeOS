@@ -19,15 +19,24 @@ export default function ReminderListWrapper() {
         const res = await fetch('/api/reminders').then((r) => r.json());
         if (!ignore && res.reminders) {
           setReminders(
-            res.reminders.map((r: ReminderRow) => ({
-              id: r.id,
-              userId: r.user_id,
-              taskId: r.task_id || undefined,
-              eventId: r.event_id || undefined,
-              remindAt: r.remind_at,
-              status: r.status,
-              createdAt: r.created_at,
-            }))
+            res.reminders.map((r: any) => {
+              const taskObj = Array.isArray(r.tasks) ? r.tasks[0] : r.tasks;
+              const eventObj = Array.isArray(r.events) ? r.events[0] : r.events;
+              const title = taskObj?.title || eventObj?.title || 'Scheduled Alert';
+              const description = taskObj?.description || eventObj?.description || undefined;
+
+              return {
+                id: r.id,
+                userId: r.user_id,
+                taskId: r.task_id || undefined,
+                eventId: r.event_id || undefined,
+                remindAt: r.remind_at,
+                status: r.status,
+                createdAt: r.created_at,
+                title,
+                description,
+              };
+            })
           );
         }
       } catch (err) {
