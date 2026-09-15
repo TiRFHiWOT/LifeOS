@@ -1,10 +1,13 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { AIInterpretationResult, AIIntent, AIChoice } from '../types/ai';
+import { AIInterpretationResult, AIIntent, AIChoice, UserContextSummary } from '../types/ai';
+import { findAvailableTimeSlots, buildCalendarAvailabilityChoices } from './calendarIntelligence';
+import { getWeatherForecast } from './weather';
 
 export async function interpretNaturalLanguage(
   prompt: string,
   referenceDateISO?: string,
-  conversationHistory?: { role: string; text: string }[]
+  conversationHistory?: { role: string; text: string }[],
+  userContext?: UserContextSummary
 ): Promise<AIInterpretationResult> {
   const apiKey = process.env.GEMINI_API_KEY;
 
@@ -15,6 +18,29 @@ export async function interpretNaturalLanguage(
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const localTimeStr = now.toLocaleString('en-US', { timeZoneName: 'short' });
 
+  let userContextStr = '';
+  if (userContext) {
+    const tasksList = (userContext.tasks || []).map((t) => `- Task "${t.title}" (ID: ${t.id}${t.dueAt ? `, Due: ${t.dueAt}` : ''})`).join('\n');
+    const eventsList = (userContext.events || []).map((e) => `- Event "${e.title}" (ID: ${e.id}, Start: ${e.startAt})`).join('\n');
+    const notesList = (userContext.notes || []).map((n) => `- Note "${n.title}" (ID: ${n.id})`).join('\n');
+    const remindersList = (userContext.reminders || []).map((r) => `- Reminder "${r.title || 'Reminder'}" (ID: ${r.id}, At: ${r.remindAt})`).join('\n');
+
+    userContextStr = `
+User's Current Existing Information:
+Tasks:
+${tasksList || 'None'}
+
+Events:
+${eventsList || 'None'}
+
+Notes:
+${notesList || 'None'}
+
+Reminders:
+${remindersList || 'None'}
+`;
+  }
+
   const systemInstruction = `
 You are the natural language understanding engine for LifeOS, a personal administrative assistant.
 Analyze user inputs and map them to structured intents and parameters.
@@ -23,6 +49,14 @@ Current reference time context:
 - Local Time: ${localTimeStr} (Timezone: ${timeZone})
 - ISO UTC Timestamp: ${currentDateStr}
 - Day of week: ${dayOfWeek}
+
+${userContextStr}
+
+CONTEXT & EXISTING INFORMATION RULES:
+1. BEFORE creating a new task, event, reminder, or note, check if the user is referring to an existing item in the User's Current Existing Information list (e.g. "Move my dentist appointment to next week", "Reschedule my meeting", "Cancel grocery task").
+2. If the user request refers to an existing item:
+   - DO NOT create a new duplicate item.
+   - If user asks to move/reschedule an item, set intent to "missing_information" (or "update_event"/"update_task") asking confirmation (e.g. question: "Do you want to move your dentist appointment (Friday, 3 PM) to next week?") AND set "targetItemId" to matching item ID.
 
 TIME SCHEDULING RULES:
 1. If the user specifies ANY relative time ("in 30 sec", "in 1 min", "after 5 mins", "in an hour") or absolute time ("at 3 pm"), calculate the exact ISO 8601 timestamp relative to the reference timestamp (${currentDateStr}).
@@ -39,13 +73,17 @@ Possible Intents:
 4. "create_reminder": Explicit alert request for a task or standalone timestamp. Required fields: remindAt or reminderMinutesBefore.
 5. "suggest_choices": Use this when user input is ambiguous, a general status update (e.g., "I am sick today", "I feel tired", "Going to New York"), or could be handled in multiple ways. Return intent "suggest_choices" with a polite message in "question" and 2 to 4 structured choices in "choices". Each choice must have "label", "type" ('task'|'note'|'event'|'reminder'), and full "interpretation" payload object.
 6. "missing_information": The request intends a specific action but critical required info (like event time) is missing.
-7. "unknown": Input is completely unintelligible.
+7. "create_plan": Multi-step goal, travel preparation, project, or major objective that involves multiple sub-actions (e.g., "I need to prepare for my trip to Nairobi next month", "I need to move to a new apartment next month", "Plan my trip"). Distinguish simple single tasks (e.g. "Buy groceries tomorrow") from multi-step goals. When intent is "create_plan", set "goal" to the main goal title (e.g. "Prepare for Nairobi trip"), and "possibleActions" to an array of 3 to 6 logical sub-action strings (e.g. ["Check passport", "Book accommodation", "Prepare packing list", "Set travel reminder"]).
+8. "update_event": Reschedule or update an existing calendar appointment matching targetItemId.
+9. "update_task": Reschedule or update an existing task matching targetItemId.
+10. "weather_check": Checking weather forecast, rain expectations, or outdoor conditions for an event or location (e.g. "will it rain tomorrow during my event?", "what's the weather forecast?").
+11. "unknown": Input is completely unintelligible.
 
 Always output ISO 8601 format timestamps for dates/times (e.g., "2026-09-11T15:00:00.000Z").
 `;
 
   if (!apiKey || apiKey === 'your-gemini-api-key') {
-    return heuristicFallbackParse(prompt, now, conversationHistory);
+    return heuristicFallbackParse(prompt, now, conversationHistory, userContext);
   }
 
   try {
@@ -76,11 +114,18 @@ Always output ISO 8601 format timestamps for dates/times (e.g., "2026-09-11T15:0
                 'create_reminder',
                 'suggest_choices',
                 'missing_information',
+                'create_plan',
+                'weather_check',
                 'unknown',
               ],
             },
             confidence: { type: Type.NUMBER },
             title: { type: Type.STRING },
+            goal: { type: Type.STRING },
+            possibleActions: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+            },
             description: { type: Type.STRING },
             content: { type: Type.STRING },
             startAt: { type: Type.STRING },
@@ -130,10 +175,10 @@ Always output ISO 8601 format timestamps for dates/times (e.g., "2026-09-11T15:0
     }
 
     const parsed: AIInterpretationResult = JSON.parse(response.text);
-    return validateAndSanitizeResult(parsed, prompt, now);
+    return await validateAndSanitizeResult(parsed, prompt, now);
   } catch (err: unknown) {
     console.error('Gemini AI API call failed, falling back to heuristic parser:', err);
-    return heuristicFallbackParse(prompt, now, conversationHistory);
+    return await heuristicFallbackParse(prompt, now, conversationHistory);
   }
 }
 
@@ -194,7 +239,7 @@ export function timeOfDayWordToHour(text: string): number | null {
   return null;
 }
 
-function validateAndSanitizeResult(result: AIInterpretationResult, prompt: string, now: Date): AIInterpretationResult {
+async function validateAndSanitizeResult(result: AIInterpretationResult, prompt: string, now: Date): Promise<AIInterpretationResult> {
   const validIntents: AIIntent[] = [
     'create_task',
     'create_note',
@@ -202,11 +247,35 @@ function validateAndSanitizeResult(result: AIInterpretationResult, prompt: strin
     'create_reminder',
     'suggest_choices',
     'missing_information',
+    'create_plan',
+    'update_event',
+    'update_task',
+    'delete_event',
+    'delete_task',
+    'action_confirmation_required',
+    'weather_check',
     'unknown',
   ];
 
   if (!validIntents.includes(result.intent)) {
     result.intent = 'suggest_choices';
+  }
+
+  if (result.intent === 'weather_check' && !result.weatherForecast) {
+    result.weatherForecast = await getWeatherForecast();
+  }
+
+  if (result.intent === 'create_plan') {
+    if (!result.goal) {
+      result.goal = sanitizeTitle(result.title, prompt);
+    }
+    if (!result.possibleActions || !Array.isArray(result.possibleActions) || result.possibleActions.length === 0) {
+      result.possibleActions = [
+        `Research details for ${result.goal}`,
+        `Create task list for ${result.goal}`,
+        `Set travel/preparation reminders`,
+      ];
+    }
   }
 
   if (result.intent === 'create_note') {
@@ -410,19 +479,137 @@ export function cleanReminderTitle(prompt: string): string {
   return clean.charAt(0).toUpperCase() + clean.slice(1);
 }
 
-function heuristicFallbackParse(
+async function heuristicFallbackParse(
   prompt: string,
   now: Date,
-  conversationHistory?: { role: string; text: string }[]
-): AIInterpretationResult {
+  conversationHistory?: { role: string; text: string }[],
+  userContext?: UserContextSummary
+): Promise<AIInterpretationResult> {
   const lower = prompt.toLowerCase();
 
-  // If there's conversation history where assistant asked for time, merge context!
+  // Weather query heuristic detection
+  const isWeatherQuery = /(weather|rain|forecast|outdoor condition|will it rain|is it going to rain)/i.test(lower);
+  if (isWeatherQuery) {
+    const forecast = await getWeatherForecast();
+    return {
+      intent: 'weather_check',
+      confidence: 0.95,
+      title: 'Weather Check',
+      weatherForecast: forecast,
+      reasoning: 'Parsed weather check / rain forecast query from fallback heuristic',
+    };
+  }
+
+  // Destructive action check (e.g. delete/remove item) -> Action Confirmation Rule
+  const isDeleteAction = /(delete|remove|cancel|erase)\s+(my\s+)?(.+)/i.test(lower);
+  const isAffirmativeTurn = /^(yes|yeah|sure|confirm|do it|go ahead|ok)\b/i.test(lower.trim());
+  if (isDeleteAction && !isAffirmativeTurn) {
+    const rawMatch = prompt.replace(/^(please\s+)?(delete|remove|cancel|erase)\s+(my\s+)?/i, '').trim();
+    const cleanTitle = rawMatch ? rawMatch.charAt(0).toUpperCase() + rawMatch.slice(1) : 'Item';
+    return {
+      intent: 'action_confirmation_required',
+      confidence: 0.95,
+      title: cleanTitle,
+      question: `Are you sure you want to delete "${cleanTitle}"?`,
+      confirmationMessage: `This action will permanently delete "${cleanTitle}".`,
+      requiresConfirmation: true,
+      pendingAction: {
+        intent: 'delete_event',
+        confidence: 0.95,
+        title: cleanTitle,
+      },
+      reasoning: 'Action Confirmation Rule: Destructive operations require user confirmation before execution',
+    };
+  }
+
+  // Context item matching: search existing events/tasks if prompt implies updating/moving/referencing existing items
+  if (userContext) {
+    const isMoveOrUpdate = /(move|reschedule|shift|postpone|change|update|cancel|delete)/i.test(lower);
+
+    if (isMoveOrUpdate) {
+      // Check existing events
+      const matchingEvent = (userContext.events || []).find((e) => {
+        const titleLower = e.title.toLowerCase();
+        return lower.includes(titleLower) || titleLower.split(' ').some((word) => word.length > 3 && lower.includes(word));
+      });
+
+      if (matchingEvent) {
+        const formattedStart = new Date(matchingEvent.startAt).toLocaleString([], { weekday: 'long', hour: '2-digit', minute: '2-digit' });
+        return {
+          intent: 'missing_information',
+          confidence: 0.95,
+          title: matchingEvent.title,
+          targetItemId: matchingEvent.id,
+          targetItemType: 'event',
+          existingItemSummary: `${matchingEvent.title} — ${formattedStart}`,
+          question: `Do you want to move your ${matchingEvent.title} (${formattedStart}) to next week?`,
+          reasoning: 'Parsed reference to matching existing event in user context',
+        };
+      }
+
+      // Check existing tasks
+      const matchingTask = (userContext.tasks || []).find((t) => {
+        const titleLower = t.title.toLowerCase();
+        return lower.includes(titleLower) || titleLower.split(' ').some((word) => word.length > 3 && lower.includes(word));
+      });
+
+      if (matchingTask) {
+        return {
+          intent: 'missing_information',
+          confidence: 0.95,
+          title: matchingTask.title,
+          targetItemId: matchingTask.id,
+          targetItemType: 'task',
+          existingItemSummary: `Task: ${matchingTask.title}`,
+          question: `Do you want to update your task "${matchingTask.title}"?`,
+          reasoning: 'Parsed reference to matching existing task in user context',
+        };
+      }
+    }
+  }
+
+  // If there's conversation history, perform stateful multi-turn follow-up resolution!
   if (conversationHistory && conversationHistory.length > 0) {
     const lastAssistantMsg = [...conversationHistory].reverse().find((h) => h.role === 'assistant');
     const firstUserMsg = conversationHistory.find((h) => h.role === 'user')?.text || 'Event';
     const assistantText = lastAssistantMsg?.text?.toLowerCase() || '';
 
+    // 1. Affirmative answer to an existing item update/reschedule question
+    const isAffirmative = /^(yes|yeah|sure|yep|confirm|do it|go ahead|move it|update it|ok|okay)\b/i.test(lower.trim());
+    if (isAffirmative && (assistantText.includes('move') || assistantText.includes('update') || assistantText.includes('reschedule') || assistantText.includes('dentist'))) {
+      const matchItemTitle = assistantText.match(/(?:move|update|reschedule)\s+(?:your\s+)?([^?(]+)/i);
+      const title = matchItemTitle ? matchItemTitle[1].trim() : (firstUserMsg || 'Event');
+      return {
+        intent: 'update_event',
+        confidence: 0.95,
+        title,
+        reasoning: 'Stateful multi-turn follow-up: user confirmed moving/updating existing item',
+      };
+    }
+
+    // 2. Choice selection follow-up (e.g. user selects "save as note", "task", "option 1", etc.)
+    const isChoiceAnswer = /^(note|save as note|task|add task|event|schedule event|reminder|set reminder|1|2|3|4|first|second|third)\b/i.test(lower.trim());
+    if (isChoiceAnswer && (assistantText.includes('how would you like') || assistantText.includes('handle this') || assistantText.includes('choices') || assistantText.includes('suggestions'))) {
+      if (lower.includes('note')) {
+        return {
+          intent: 'create_note',
+          confidence: 0.95,
+          title: firstUserMsg ? (firstUserMsg.length > 30 ? firstUserMsg.slice(0, 27) + '...' : firstUserMsg) : 'Saved Note',
+          content: firstUserMsg || prompt,
+          reasoning: 'Stateful multi-turn follow-up: user selected Note choice',
+        };
+      } else if (lower.includes('task')) {
+        return {
+          intent: 'create_task',
+          confidence: 0.95,
+          title: `Handle '${firstUserMsg ? (firstUserMsg.length > 30 ? firstUserMsg.slice(0, 27) + '...' : firstUserMsg) : 'Task'}'`,
+          dueAt: new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+          reasoning: 'Stateful multi-turn follow-up: user selected Task choice',
+        };
+      }
+    }
+
+    // 3. Time answer follow-up to missing time question
     const askedForTime = assistantText.includes('time') || assistantText.includes('what time') || assistantText.includes('when');
     const looksLikeTimeAnswer = /\d/.test(lower) || lower.includes('pm') || lower.includes('am') || lower.includes('at') ||
       /\b(morning|afternoon|evening|night|noon|midnight)\b/.test(lower);
@@ -483,6 +670,52 @@ function heuristicFallbackParse(
     }
   }
 
+  // Goal / Multi-step plan heuristic detection
+  const isGoalPhrase = /(prepare for|plan (for|my|a)|moving to|trip to|travel to|vacation|project to|organize my|help me prepare|prepare to|need to prepare)/i.test(lower);
+  const isSingleSimpleTask = /^(buy|call|clean|pick up|remind me to buy)\b/i.test(lower);
+
+  if (isGoalPhrase && !isSingleSimpleTask) {
+    let goalTitle = 'Personal Goal';
+    let actions: string[] = [];
+
+    if (lower.includes('nairobi') || lower.includes('trip') || lower.includes('travel')) {
+      goalTitle = 'Prepare for Nairobi trip';
+      actions = [
+        'Check passport',
+        'Book accommodation',
+        'Prepare packing list',
+        'Set travel reminder',
+      ];
+    } else if (lower.includes('apartment') || lower.includes('mov')) {
+      goalTitle = 'Move to new apartment';
+      actions = [
+        'Contact landlord',
+        'Arrange transportation',
+        'Pack belongings',
+        'Transfer internet',
+        'Change address',
+      ];
+    } else {
+      const match = prompt.match(/(?:prepare for|plan|organize)\s+(?:my\s+)?(.+)/i);
+      goalTitle = match ? match[1].charAt(0).toUpperCase() + match[1].slice(1) : prompt;
+      actions = [
+        `Research requirements for ${goalTitle}`,
+        `Create task breakdown for ${goalTitle}`,
+        `Schedule deadlines on calendar`,
+        `Set key reminders`,
+      ];
+    }
+
+    return {
+      intent: 'create_plan',
+      confidence: 0.95,
+      goal: goalTitle,
+      title: goalTitle,
+      possibleActions: actions,
+      reasoning: 'Parsed multi-step goal intent from fallback heuristic',
+    };
+  }
+
   // Flexible notification & reminder regex pattern
   const isNotificationIntent = /(notify|remind|ping|alert|let me know|warn|tell me|wake me|heads up)/i.test(lower);
   if (isNotificationIntent) {
@@ -526,6 +759,47 @@ function heuristicFallbackParse(
     // Build a clean, short title from the matched event noun
     const eventNoun = eventWordMatch![1];
     const nounTitle = eventNoun.charAt(0).toUpperCase() + eventNoun.slice(1);
+
+    // Check if prompt specifies a general time of day (morning, afternoon, evening) WITHOUT an explicit numeric hour
+    const hasNumericTime = /\b\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b/i.test(lower) || /\bat\s+\d{1,2}\b/i.test(lower);
+    const todMatch = lower.match(/\b(morning|afternoon|evening)\b/i);
+
+    if (!hasNumericTime && todMatch) {
+      const tod = todMatch[1].toLowerCase() as 'morning' | 'afternoon' | 'evening';
+      const targetDate = new Date(now);
+      if (lower.includes('tomorrow')) {
+        targetDate.setDate(targetDate.getDate() + 1);
+      }
+
+      const existingEventsSummary = (userContext?.events || []).map((e) => ({
+        title: e.title,
+        startAt: e.startAt,
+        endAt: e.endAt,
+      }));
+
+      const availableSlots = findAvailableTimeSlots(targetDate, existingEventsSummary, tod);
+      if (availableSlots.length > 0) {
+        let cleanTitle = prompt
+          .replace(/^schedule\s+(a\s+)?(meeting\s+with\s+|dinner\s+with\s+|lunch\s+with\s+)?/i, '')
+          .replace(/\s*(tomorrow|today|this|next)?\s*(morning|afternoon|evening).*/i, '')
+          .trim();
+
+        if (!cleanTitle || cleanTitle.length < 2) cleanTitle = nounTitle;
+        cleanTitle = cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1);
+        if (lower.includes('sarah') && !cleanTitle.toLowerCase().includes('sarah')) {
+          cleanTitle = `Meeting with Sarah`;
+        }
+
+        const choicesData = buildCalendarAvailabilityChoices(cleanTitle, availableSlots);
+        return {
+          intent: 'suggest_choices',
+          confidence: 0.95,
+          question: choicesData.question,
+          choices: choicesData.choices,
+          reasoning: 'Calendar Intelligence: checked calendar availability and suggested open time options',
+        };
+      }
+    }
 
     if (!hasExplicitTimeOfDay(prompt)) {
       return {

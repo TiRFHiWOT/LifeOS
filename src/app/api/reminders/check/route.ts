@@ -1,5 +1,5 @@
 import { getUser } from '@/lib/auth';
-import { processDueReminders } from '@/services/reminderEngine';
+import { processDueReminders, generateProactiveAgentAlerts } from '@/services/reminderEngine';
 import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 
@@ -13,6 +13,11 @@ export async function GET() {
     const supabase = await createClient();
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     const nowISO = new Date().toISOString();
+
+    const [proactiveAlerts] = await Promise.all([
+      generateProactiveAgentAlerts(user.id),
+      processDueReminders(),
+    ]);
 
     const { data: pendingDue } = await supabase
       .from('reminders')
@@ -29,8 +34,6 @@ export async function GET() {
       .eq('user_id', user.id)
       .eq('status', 'pending')
       .lte('remind_at', nowISO);
-
-    await processDueReminders();
 
     const { data: recentSent } = await supabase
       .from('reminders')
@@ -58,6 +61,7 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       timestamp: nowISO,
+      proactiveAlerts,
       dueReminders,
     });
   } catch (error: unknown) {

@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useSyncExternalStore } from 'react';
 import ResultCard, { ActionResultData } from '@/components/ResultCard';
+import AgentActivityLog from '@/components/AgentActivityLog';
+import { AgentActivityEntry } from '@/services/agentActivityLog';
 import Link from 'next/link';
 import { TaskItem, EventItem } from '@/types';
 import { Database } from '@/types/database';
@@ -37,11 +39,24 @@ export default function AssistantHome() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ActionResultData | null>(null);
   const [conversationHistory, setConversationHistory] = useState<ConversationMessage[]>([]);
+  const [activities, setActivities] = useState<AgentActivityEntry[]>([]);
   const greeting = useGreeting();
 
   // Coming up teaser state
   const [upcomingEvents, setUpcomingEvents] = useState<EventItem[]>([]);
   const [upcomingTasks, setUpcomingTasks] = useState<TaskItem[]>([]);
+
+  const fetchActivities = async () => {
+    try {
+      const res = await fetch('/api/agent/activities');
+      const data = await res.json();
+      if (data.activities) {
+        setActivities(data.activities);
+      }
+    } catch (err) {
+      console.error('Failed to load agent activities:', err);
+    }
+  };
 
   const fetchUpcomingTeaser = async () => {
     try {
@@ -87,7 +102,7 @@ export default function AssistantHome() {
     let ignore = false;
     async function load() {
       if (!ignore) {
-        await fetchUpcomingTeaser();
+        await Promise.all([fetchUpcomingTeaser(), fetchActivities()]);
       }
     }
     load();
@@ -127,6 +142,7 @@ export default function AssistantHome() {
         setConversationHistory([]);
         setPrompt('');
         fetchUpcomingTeaser();
+        fetchActivities();
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to process request';
@@ -158,6 +174,7 @@ export default function AssistantHome() {
       setResult(action);
       setPrompt('');
       fetchUpcomingTeaser();
+      fetchActivities();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to execute choice';
       setResult({ actionType: 'error', success: false, message: msg });
@@ -285,6 +302,9 @@ export default function AssistantHome() {
           </div>
         </div>
       )}
+
+      {/* Agent Activity Log Timeline View */}
+      <AgentActivityLog activities={activities} />
     </div>
   );
 }

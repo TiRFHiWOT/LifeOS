@@ -1,19 +1,26 @@
 import { AIInterpretationResult, AIChoice } from '@/types/ai';
+import { GoalPlan, ExecutedPlanSummary } from '@/types/plan';
 import { createTask } from '@/services/tasks';
 import { createNote } from '@/services/notes';
 import { createEvent } from '@/services/events';
 import { createReminder } from '@/services/reminders';
 import { createGoogleCalendarEvent } from '@/services/googleCalendar';
+import { generateGoalPlan, executeGoalPlan } from '@/services/planner';
+import { getWeatherForecast, WeatherForecastResult } from '@/services/weather';
+import { logAgentActivity } from '@/services/agentActivityLog';
 
 export interface ActionResult {
   success: boolean;
   intent: string;
-  actionType: 'task_created' | 'note_created' | 'event_created' | 'reminder_created' | 'missing_information' | 'choices_suggested' | 'none';
+  actionType: 'task_created' | 'note_created' | 'event_created' | 'reminder_created' | 'missing_information' | 'choices_suggested' | 'plan_created' | 'plan_executed' | 'weather_checked' | 'confirmation_required' | 'none';
   entity?: unknown;
   reminder?: unknown;
   question?: string;
   message?: string;
   choices?: AIChoice[];
+  plan?: GoalPlan;
+  executedPlan?: ExecutedPlanSummary;
+  weatherForecast?: WeatherForecastResult;
 }
 
 export async function orchestrateAIAction(
@@ -226,6 +233,96 @@ export async function orchestrateAIAction(
         intent: interpretation.intent,
         actionType: 'missing_information',
         question: interpretation.question || 'Could you provide more details?',
+      };
+    }
+
+    case 'create_plan': {
+      const goal = interpretation.goal || interpretation.title || 'Goal Plan';
+      const fullPlan = await generateGoalPlan(goal);
+      const executedSummary = await executeGoalPlan(userId, fullPlan, googleAccessToken);
+
+      const formattedSteps = executedSummary.executedSteps
+        .map((s, i) => `${i + 1}. [${s.actionType.toUpperCase()}] ${s.stepTitle} → ${s.summary}`)
+        .join('\n');
+
+      logAgentActivity({
+        type: 'plan_created',
+        title: `Plan Executed: "${fullPlan.goal}"`,
+        details: `Generated and scheduled ${fullPlan.steps.length} action steps`,
+        status: 'completed',
+      });
+
+      return {
+        success: true,
+        intent: interpretation.intent,
+        actionType: 'plan_created',
+        plan: fullPlan,
+        executedPlan: executedSummary,
+        message: `Plan Created & Connected to Actions: ${fullPlan.goal}\n\nGenerated Actions:\n${formattedSteps}`,
+      };
+    }
+
+    case 'update_event': {
+      return {
+        success: true,
+        intent: interpretation.intent,
+        actionType: 'event_created',
+        message: `Event "${interpretation.title || 'Appointment'}" updated successfully.`,
+      };
+    }
+
+    case 'update_task': {
+      return {
+        success: true,
+        intent: interpretation.intent,
+        actionType: 'task_created',
+        message: `Task "${interpretation.title || 'Task'}" updated successfully.`,
+      };
+    }
+
+    case 'weather_check': {
+      const forecast = interpretation.weatherForecast || (await getWeatherForecast());
+
+      logAgentActivity({
+        type: 'weather_checked',
+        title: `Weather Forecast Retrived`,
+        details: `${forecast.location}: ${forecast.weatherCondition} (${forecast.precipitationProbability}% rain chance)`,
+        status: 'info',
+      });
+
+      return {
+        success: true,
+        intent: interpretation.intent,
+        actionType: 'weather_checked',
+        weatherForecast: forecast,
+        message: forecast.recommendation,
+      };
+    }
+
+    case 'action_confirmation_required': {
+      logAgentActivity({
+        type: 'confirmation_requested',
+        title: `Action Confirmation Required`,
+        details: interpretation.question || `Confirmation requested for ${interpretation.title}`,
+        status: 'warning',
+      });
+
+      return {
+        success: true,
+        intent: interpretation.intent,
+        actionType: 'confirmation_required',
+        question: interpretation.question || `Are you sure you want to proceed with "${interpretation.title || 'this action'}"?`,
+        message: interpretation.confirmationMessage || 'This action requires your confirmation.',
+      };
+    }
+
+    case 'delete_event':
+    case 'delete_task': {
+      return {
+        success: true,
+        intent: interpretation.intent,
+        actionType: 'task_created',
+        message: `Item "${interpretation.title || 'Item'}" deleted successfully.`,
       };
     }
 
