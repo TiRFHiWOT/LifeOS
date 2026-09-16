@@ -82,6 +82,51 @@ Possible Intents:
 Always output ISO 8601 format timestamps for dates/times (e.g., "2026-09-11T15:00:00.000Z").
 `;
 
+  // Context item matching: prioritize matching existing items when user asks to move/reschedule/update
+  if (userContext) {
+    const lowerPrompt = prompt.toLowerCase();
+    const isMoveOrUpdate = /(move|reschedule|shift|postpone|change|update)/i.test(lowerPrompt);
+
+    if (isMoveOrUpdate) {
+      const matchingEvent = (userContext.events || []).find((e) => {
+        const titleLower = e.title.toLowerCase();
+        return lowerPrompt.includes(titleLower) || titleLower.split(' ').some((word) => word.length > 3 && lowerPrompt.includes(word));
+      });
+
+      if (matchingEvent) {
+        const formattedStart = new Date(matchingEvent.startAt).toLocaleString([], { weekday: 'long', hour: '2-digit', minute: '2-digit' });
+        return {
+          intent: 'missing_information',
+          confidence: 0.95,
+          title: matchingEvent.title,
+          targetItemId: matchingEvent.id,
+          targetItemType: 'event',
+          existingItemSummary: `${matchingEvent.title} — ${formattedStart}`,
+          question: `Do you want to move your ${matchingEvent.title} (${formattedStart}) to next week?`,
+          reasoning: 'Parsed reference to matching existing event in user context',
+        };
+      }
+
+      const matchingTask = (userContext.tasks || []).find((t) => {
+        const titleLower = t.title.toLowerCase();
+        return lowerPrompt.includes(titleLower) || titleLower.split(' ').some((word) => word.length > 3 && lowerPrompt.includes(word));
+      });
+
+      if (matchingTask) {
+        return {
+          intent: 'missing_information',
+          confidence: 0.95,
+          title: matchingTask.title,
+          targetItemId: matchingTask.id,
+          targetItemType: 'task',
+          existingItemSummary: `Task: ${matchingTask.title}`,
+          question: `Do you want to update your task "${matchingTask.title}"?`,
+          reasoning: 'Parsed reference to matching existing task in user context',
+        };
+      }
+    }
+  }
+
   if (!apiKey || apiKey === 'your-gemini-api-key') {
     return heuristicFallbackParse(prompt, now, conversationHistory, userContext);
   }

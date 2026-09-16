@@ -336,44 +336,76 @@ export default function ResultCard({ result, onClear, onFollowUpSubmit, onExecut
     );
   }
 
-  // Case 2: Missing Information Question
+  // Case 2: Missing Information Question or Confirmation Question
   if (result.actionType === 'missing_information' || result.question) {
+    const questionText = result.question || result.message || 'What time is the meeting?';
+    const isYesNoQuestion = /^(do you|would you|should i|are you|can i)\b/i.test(questionText.trim()) ||
+      questionText.toLowerCase().includes('do you want to') ||
+      questionText.toLowerCase().includes('would you like to');
+
     return (
-      <div className="w-full bg-indigo-950/40 border border-indigo-500/30 rounded-2xl p-5 shadow-xl space-y-3">
+      <div className="w-full bg-indigo-950/40 border border-indigo-500/30 rounded-2xl p-5 shadow-xl space-y-4">
         <div className="flex items-center gap-2 text-indigo-400 font-semibold text-xs tracking-wide uppercase">
           <HelpCircle className="w-4 h-4 animate-pulse text-indigo-400" />
           Assistant Question
         </div>
         <p className="text-base font-semibold text-slate-100">
-          {result.question || result.message || 'What time is the meeting?'}
+          {questionText}
         </p>
-        <form onSubmit={handleFollowUp} className="space-y-3 pt-1">
-          <input
-            type="text"
-            value={followUpInput}
-            onChange={(e) => setFollowUpInput(e.target.value)}
-            disabled={submitting}
-            placeholder="e.g. 10:00 AM"
-            className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-indigo-500/40 text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:border-indigo-400"
-          />
-          <div className="flex justify-end gap-2">
+
+        {isYesNoQuestion ? (
+          <div className="flex items-center justify-end gap-3 pt-2">
             <button
               type="button"
               onClick={onClear}
-              className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-slate-200"
+              className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800 text-xs font-semibold transition cursor-pointer"
             >
-              Cancel
+              No, Keep Original
             </button>
             <button
-              type="submit"
-              disabled={submitting || !followUpInput.trim()}
-              className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition shadow-md disabled:opacity-50 flex items-center gap-1.5"
+              type="button"
+              onClick={async () => {
+                if (onFollowUpSubmit) {
+                  await onFollowUpSubmit('Yes, confirm.');
+                } else {
+                  onClear();
+                }
+              }}
+              className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition shadow-md flex items-center gap-1.5 cursor-pointer"
             >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>{submitting ? 'Updating...' : 'Continue'}</span>
+              <Check className="w-4 h-4 text-white" />
+              <span>Yes, Move Item</span>
             </button>
           </div>
-        </form>
+        ) : (
+          <form onSubmit={handleFollowUp} className="space-y-3 pt-1">
+            <input
+              type="text"
+              value={followUpInput}
+              onChange={(e) => setFollowUpInput(e.target.value)}
+              disabled={submitting}
+              placeholder="e.g. 10:00 AM"
+              className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-indigo-500/40 text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:border-indigo-400"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={onClear}
+                className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-slate-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting || !followUpInput.trim()}
+                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition shadow-md disabled:opacity-50 flex items-center gap-1.5"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>{submitting ? 'Updating...' : 'Continue'}</span>
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     );
   }

@@ -2,7 +2,7 @@ import { AIInterpretationResult, AIChoice } from '@/types/ai';
 import { GoalPlan, ExecutedPlanSummary } from '@/types/plan';
 import { createTask } from '@/services/tasks';
 import { createNote } from '@/services/notes';
-import { createEvent } from '@/services/events';
+import { createEvent, updateEvent, deleteEvent, getEvents } from '@/services/events';
 import { createReminder } from '@/services/reminders';
 import { createGoogleCalendarEvent } from '@/services/googleCalendar';
 import { generateGoalPlan, executeGoalPlan } from '@/services/planner';
@@ -21,6 +21,15 @@ export interface ActionResult {
   plan?: GoalPlan;
   executedPlan?: ExecutedPlanSummary;
   weatherForecast?: WeatherForecastResult;
+  createdItem?: {
+    id?: string;
+    title?: string;
+    startAt?: string;
+    endAt?: string;
+    dueAt?: string;
+    content?: string;
+    remindAt?: string;
+  };
 }
 
 export async function orchestrateAIAction(
@@ -263,11 +272,49 @@ export async function orchestrateAIAction(
     }
 
     case 'update_event': {
+      let updatedEntity = null;
+      let targetId = interpretation.targetItemId;
+
+      if (!targetId && userId) {
+        try {
+          const userEvents = await getEvents(userId);
+          const searchTitle = (interpretation.title || 'dentist').toLowerCase();
+          const match = userEvents.find(e => e.title.toLowerCase().includes(searchTitle) || searchTitle.includes(e.title.toLowerCase()));
+          if (match) {
+            targetId = match.id;
+          }
+        } catch (err) {
+          console.error('Failed to lookup event by title:', err);
+        }
+      }
+
+      if (targetId) {
+        const nextWeekStart = interpretation.startAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        const nextWeekEnd = interpretation.endAt || new Date(new Date(nextWeekStart).getTime() + 60 * 60 * 1000).toISOString();
+        try {
+          updatedEntity = await updateEvent(userId, targetId, {
+            start_at: nextWeekStart,
+            end_at: nextWeekEnd,
+          });
+        } catch (err) {
+          console.error('Failed to update event in database:', err);
+        }
+      }
+
       return {
         success: true,
         intent: interpretation.intent,
         actionType: 'event_created',
-        message: `Event "${interpretation.title || 'Appointment'}" updated successfully.`,
+        entity: updatedEntity,
+        createdItem: updatedEntity
+          ? {
+              id: updatedEntity.id,
+              title: updatedEntity.title,
+              startAt: updatedEntity.start_at,
+              endAt: updatedEntity.end_at,
+            }
+          : undefined,
+        message: `Event "${interpretation.title || updatedEntity?.title || 'Appointment'}" moved to next week successfully.`,
       };
     }
 
@@ -316,7 +363,36 @@ export async function orchestrateAIAction(
       };
     }
 
-    case 'delete_event':
+    case 'delete_event': {
+      let targetId = interpretation.targetItemId;
+      if (!targetId && userId) {
+        try {
+          const userEvents = await getEvents(userId);
+          const searchTitle = (interpretation.title || '').toLowerCase();
+          const match = userEvents.find(e => e.title.toLowerCase().includes(searchTitle) || searchTitle.includes(e.title.toLowerCase()));
+          if (match) {
+            targetId = match.id;
+          }
+        } catch (err) {
+          console.error('Failed to lookup event by title:', err);
+        }
+      }
+
+      if (targetId) {
+        try {
+          await deleteEvent(userId, targetId);
+        } catch (err) {
+          console.error('Failed to delete event in database:', err);
+        }
+      }
+      return {
+        success: true,
+        intent: interpretation.intent,
+        actionType: 'task_created',
+        message: `Event "${interpretation.title || 'Appointment'}" deleted successfully.`,
+      };
+    }
+
     case 'delete_task': {
       return {
         success: true,
