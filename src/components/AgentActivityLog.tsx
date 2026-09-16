@@ -17,7 +17,7 @@ export default function AgentActivityLog({ activities }: AgentActivityLogProps) 
       <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
         <div className="flex items-center gap-2 text-indigo-400 font-semibold text-xs tracking-wider uppercase">
           <Activity className="w-4 h-4 text-indigo-400 animate-pulse" />
-          <span>Agent Activity Timeline</span>
+          <span>LifeOS Activity Timeline</span>
         </div>
         <span className="text-[10px] font-mono text-slate-500 bg-slate-950 px-2.5 py-1 rounded-full border border-slate-800">
           {activities.length} Events

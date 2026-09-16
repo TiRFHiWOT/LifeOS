@@ -59,7 +59,7 @@ export default function ResultCard({ result, onClear, onFollowUpSubmit, onExecut
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-indigo-400 font-semibold text-xs tracking-wide uppercase">
             <Sparkles className="w-4 h-4 text-indigo-400 animate-pulse" />
-            AI Agent Plan Execution
+            LifeOS Plan Execution
           </div>
           <button onClick={onClear} className="text-xs text-slate-500 hover:text-slate-300">
             Dismiss
@@ -178,7 +178,7 @@ export default function ResultCard({ result, onClear, onFollowUpSubmit, onExecut
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sky-400 font-semibold text-xs tracking-wide uppercase">
             <CloudRain className="w-4 h-4 text-sky-400 animate-pulse" />
-            External Agent Information — Weather Intelligence
+            LifeOS External Information — Weather Intelligence
           </div>
           <button onClick={onClear} className="text-xs text-slate-500 hover:text-slate-300">
             Dismiss
@@ -205,7 +205,7 @@ export default function ResultCard({ result, onClear, onFollowUpSubmit, onExecut
 
           {forecast?.recommendation && (
             <div className="p-3 rounded-xl bg-sky-950/40 border border-sky-500/30 text-xs text-sky-200 leading-relaxed font-medium">
-              💡 <span className="font-semibold">Proactive Agent Advice:</span> {forecast.recommendation}
+              💡 <span className="font-semibold">LifeOS Advice:</span> {forecast.recommendation}
             </div>
           )}
         </div>
