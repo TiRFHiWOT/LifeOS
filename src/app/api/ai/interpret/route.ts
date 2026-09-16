@@ -14,7 +14,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { prompt, referenceDateISO, conversationHistory } = await request.json();
+    const { prompt, referenceDateISO, conversationHistory, timeZone, userLocation } = await request.json();
 
     if (!prompt || typeof prompt !== 'string' || prompt.trim() === '') {
       return NextResponse.json({ error: 'Prompt string is required' }, { status: 400 });
@@ -32,6 +32,8 @@ export async function POST(request: Request) {
       events: events.map((e) => ({ id: e.id, title: e.title, startAt: e.start_at, endAt: e.end_at })),
       notes: notes.map((n) => ({ id: n.id, title: n.title, content: n.content })),
       reminders: reminders.map((r) => ({ id: r.id, remindAt: r.remind_at })),
+      timeZone,
+      userLocation,
     };
 
     const result = await interpretNaturalLanguage(prompt.trim(), referenceDateISO, conversationHistory, userContext);

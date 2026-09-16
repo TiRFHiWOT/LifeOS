@@ -1,6 +1,6 @@
 import { AIInterpretationResult, AIChoice } from '@/types/ai';
 import { GoalPlan, ExecutedPlanSummary } from '@/types/plan';
-import { createTask } from '@/services/tasks';
+import { createTask, updateTask, deleteTask, getTasks } from '@/services/tasks';
 import { createNote } from '@/services/notes';
 import { createEvent, updateEvent, deleteEvent, getEvents } from '@/services/events';
 import { createReminder } from '@/services/reminders';
@@ -12,7 +12,22 @@ import { logAgentActivity } from '@/services/agentActivityLog';
 export interface ActionResult {
   success: boolean;
   intent: string;
-  actionType: 'task_created' | 'note_created' | 'event_created' | 'reminder_created' | 'missing_information' | 'choices_suggested' | 'plan_created' | 'plan_executed' | 'weather_checked' | 'confirmation_required' | 'none';
+  actionType:
+    | 'task_created'
+    | 'note_created'
+    | 'event_created'
+    | 'reminder_created'
+    | 'missing_information'
+    | 'choices_suggested'
+    | 'plan_created'
+    | 'plan_executed'
+    | 'weather_checked'
+    | 'confirmation_required'
+    | 'event_updated'
+    | 'task_updated'
+    | 'event_deleted'
+    | 'task_deleted'
+    | 'none';
   entity?: unknown;
   reminder?: unknown;
   question?: string;
@@ -154,7 +169,6 @@ export async function orchestrateAIAction(
           const remindDate = new Date(startDate.getTime() - interpretation.reminderMinutesBefore * 60 * 1000);
           remindAtStr = remindDate.toISOString();
         } else {
-          // Default: trigger reminder alert at the appointment start time!
           remindAtStr = interpretation.startAt;
         }
       }
@@ -247,7 +261,7 @@ export async function orchestrateAIAction(
 
     case 'create_plan': {
       const goal = interpretation.goal || interpretation.title || 'Goal Plan';
-      const fullPlan = await generateGoalPlan(goal);
+      const fullPlan = await generateGoalPlan(goal, { referenceDateISO: interpretation.startAt || undefined });
       const executedSummary = await executeGoalPlan(userId, fullPlan, googleAccessToken);
 
       const formattedSteps = executedSummary.executedSteps
@@ -304,7 +318,7 @@ export async function orchestrateAIAction(
       return {
         success: true,
         intent: interpretation.intent,
-        actionType: 'event_created',
+        actionType: 'event_updated',
         entity: updatedEntity,
         createdItem: updatedEntity
           ? {
@@ -319,11 +333,39 @@ export async function orchestrateAIAction(
     }
 
     case 'update_task': {
+      let updatedEntity = null;
+      let targetId = interpretation.targetItemId;
+
+      if (!targetId && userId) {
+        try {
+          const userTasks = await getTasks(userId);
+          const searchTitle = (interpretation.title || '').toLowerCase();
+          const match = userTasks.find(t => t.title.toLowerCase().includes(searchTitle) || searchTitle.includes(t.title.toLowerCase()));
+          if (match) {
+            targetId = match.id;
+          }
+        } catch (err) {
+          console.error('Failed to lookup task by title:', err);
+        }
+      }
+
+      if (targetId) {
+        try {
+          updatedEntity = await updateTask(userId, targetId, {
+            due_at: interpretation.dueAt || undefined,
+            title: interpretation.title || undefined,
+          });
+        } catch (err) {
+          console.error('Failed to update task in database:', err);
+        }
+      }
+
       return {
         success: true,
         intent: interpretation.intent,
-        actionType: 'task_created',
-        message: `Task "${interpretation.title || 'Task'}" updated successfully.`,
+        actionType: 'task_updated',
+        entity: updatedEntity,
+        message: `Task "${interpretation.title || updatedEntity?.title || 'Task'}" updated successfully.`,
       };
     }
 
@@ -388,16 +430,38 @@ export async function orchestrateAIAction(
       return {
         success: true,
         intent: interpretation.intent,
-        actionType: 'task_created',
+        actionType: 'event_deleted',
         message: `Event "${interpretation.title || 'Appointment'}" deleted successfully.`,
       };
     }
 
     case 'delete_task': {
+      let targetId = interpretation.targetItemId;
+      if (!targetId && userId) {
+        try {
+          const userTasks = await getTasks(userId);
+          const searchTitle = (interpretation.title || '').toLowerCase();
+          const match = userTasks.find(t => t.title.toLowerCase().includes(searchTitle) || searchTitle.includes(t.title.toLowerCase()));
+          if (match) {
+            targetId = match.id;
+          }
+        } catch (err) {
+          console.error('Failed to lookup task by title:', err);
+        }
+      }
+
+      if (targetId) {
+        try {
+          await deleteTask(userId, targetId);
+        } catch (err) {
+          console.error('Failed to delete task in database:', err);
+        }
+      }
+
       return {
         success: true,
         intent: interpretation.intent,
-        actionType: 'task_created',
+        actionType: 'task_deleted',
         message: `Item "${interpretation.title || 'Item'}" deleted successfully.`,
       };
     }

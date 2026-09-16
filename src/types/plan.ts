@@ -1,5 +1,5 @@
 export type PlanStepPriority = 'high' | 'medium' | 'low';
-export type PlanStepStatus = 'pending' | 'ready' | 'in_progress' | 'blocked' | 'completed';
+export type PlanStepStatus = 'pending' | 'ready' | 'in_progress' | 'blocked' | 'completed' | 'failed';
 export type PlanStepActionType = 'task' | 'event' | 'reminder' | 'note';
 
 export interface PlanStep {

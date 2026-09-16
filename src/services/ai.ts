@@ -3,6 +3,69 @@ import { AIInterpretationResult, AIIntent, AIChoice, UserContextSummary } from '
 import { findAvailableTimeSlots, buildCalendarAvailabilityChoices } from './calendarIntelligence';
 import { getWeatherForecast } from './weather';
 
+export function isApiKeyConfigured(): boolean {
+  const apiKey = process.env.GEMINI_API_KEY;
+  return !!(apiKey && apiKey !== 'your-gemini-api-key');
+}
+
+export function matchContextItems(prompt: string, userContext?: UserContextSummary): AIInterpretationResult | null {
+  if (!userContext) return null;
+  const lowerPrompt = prompt.toLowerCase();
+  const isRelocationMove = /(move to a|move to my|moving to|move into|relocate)/i.test(lowerPrompt);
+  const isMoveOrUpdate = !isRelocationMove && /(move|reschedule|shift|postpone|change|update|cancel|delete)/i.test(lowerPrompt);
+
+  if (!isMoveOrUpdate) return null;
+
+  const matchingEvent = (userContext.events || []).find((e) => {
+    const titleLower = e.title.toLowerCase();
+    return lowerPrompt.includes(titleLower) || titleLower.split(' ').some((word) => word.length > 3 && lowerPrompt.includes(word));
+  });
+
+  if (matchingEvent) {
+    const formattedStart = new Date(matchingEvent.startAt).toLocaleString([], { weekday: 'long', hour: '2-digit', minute: '2-digit' });
+    return {
+      intent: 'missing_information',
+      confidence: 0.95,
+      title: matchingEvent.title,
+      targetItemId: matchingEvent.id,
+      targetItemType: 'event',
+      existingItemSummary: `${matchingEvent.title} — ${formattedStart}`,
+      question: `Do you want to move your ${matchingEvent.title} (${formattedStart}) to next week?`,
+      reasoning: 'Parsed reference to matching existing event in user context',
+      pendingClarification: {
+        intent: 'update_event',
+        targetItemId: matchingEvent.id,
+        targetItemType: 'event',
+      },
+    };
+  }
+
+  const matchingTask = (userContext.tasks || []).find((t) => {
+    const titleLower = t.title.toLowerCase();
+    return lowerPrompt.includes(titleLower) || titleLower.split(' ').some((word) => word.length > 3 && lowerPrompt.includes(word));
+  });
+
+  if (matchingTask) {
+    return {
+      intent: 'missing_information',
+      confidence: 0.95,
+      title: matchingTask.title,
+      targetItemId: matchingTask.id,
+      targetItemType: 'task',
+      existingItemSummary: `Task: ${matchingTask.title}`,
+      question: `Do you want to update your task "${matchingTask.title}"?`,
+      reasoning: 'Parsed reference to matching existing task in user context',
+      pendingClarification: {
+        intent: 'update_task',
+        targetItemId: matchingTask.id,
+        targetItemType: 'task',
+      },
+    };
+  }
+
+  return null;
+}
+
 export async function interpretNaturalLanguage(
   prompt: string,
   referenceDateISO?: string,
@@ -15,8 +78,8 @@ export async function interpretNaturalLanguage(
   const currentDateStr = now.toISOString();
   const dayOfWeek = now.toLocaleDateString('en-US', { weekday: 'long' });
 
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const localTimeStr = now.toLocaleString('en-US', { timeZoneName: 'short' });
+  const timeZone = userContext?.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const localTimeStr = now.toLocaleString('en-US', { timeZoneName: 'short', timeZone });
 
   let userContextStr = '';
   if (userContext) {
@@ -39,6 +102,9 @@ ${notesList || 'None'}
 Reminders:
 ${remindersList || 'None'}
 `;
+    if (userContext.userLocation) {
+      userContextStr += `User Location: ${userContext.userLocation}\n`;
+    }
   }
 
   const systemInstruction = `
@@ -76,69 +142,31 @@ Possible Intents:
 7. "create_plan": Multi-step goal, travel preparation, project, or major objective that involves multiple sub-actions (e.g., "I need to prepare for my trip to Nairobi next month", "I need to move to a new apartment next month", "Plan my trip"). Distinguish simple single tasks (e.g. "Buy groceries tomorrow") from multi-step goals. When intent is "create_plan", set "goal" to the main goal title (e.g. "Prepare for Nairobi trip"), and "possibleActions" to an array of 3 to 6 logical sub-action strings (e.g. ["Check passport", "Book accommodation", "Prepare packing list", "Set travel reminder"]).
 8. "update_event": Reschedule or update an existing calendar appointment matching targetItemId.
 9. "update_task": Reschedule or update an existing task matching targetItemId.
-10. "weather_check": Checking weather forecast, rain expectations, or outdoor conditions for an event or location (e.g. "will it rain tomorrow during my event?", "what's the weather forecast?").
-11. "unknown": Input is completely unintelligible.
+10. "delete_event": Remove or delete an existing calendar appointment matching targetItemId.
+11. "delete_task": Remove or delete an existing task matching targetItemId.
+12. "action_confirmation_required": Destructive or high-impact operation requiring explicit user confirmation before executing.
+13. "weather_check": Checking weather forecast, rain expectations, or outdoor conditions for an event or location (e.g. "will it rain tomorrow during my event?", "what's the weather forecast?").
+14. "unknown": Input is completely unintelligible.
 
 Always output ISO 8601 format timestamps for dates/times (e.g., "2026-09-11T15:00:00.000Z").
 `;
 
-  // Context item matching: prioritize matching existing items when user asks to move/reschedule/update
-  if (userContext) {
-    const lowerPrompt = prompt.toLowerCase();
-    const isRelocationMove = /(move to a|move to my|moving to|move into|relocate)/i.test(lowerPrompt);
-    const isMoveOrUpdate = !isRelocationMove && /(move|reschedule|shift|postpone|change|update)/i.test(lowerPrompt);
-
-    if (isMoveOrUpdate) {
-      const matchingEvent = (userContext.events || []).find((e) => {
-        const titleLower = e.title.toLowerCase();
-        return lowerPrompt.includes(titleLower) || titleLower.split(' ').some((word) => word.length > 3 && lowerPrompt.includes(word));
-      });
-
-      if (matchingEvent) {
-        const formattedStart = new Date(matchingEvent.startAt).toLocaleString([], { weekday: 'long', hour: '2-digit', minute: '2-digit' });
-        return {
-          intent: 'missing_information',
-          confidence: 0.95,
-          title: matchingEvent.title,
-          targetItemId: matchingEvent.id,
-          targetItemType: 'event',
-          existingItemSummary: `${matchingEvent.title} — ${formattedStart}`,
-          question: `Do you want to move your ${matchingEvent.title} (${formattedStart}) to next week?`,
-          reasoning: 'Parsed reference to matching existing event in user context',
-        };
-      }
-
-      const matchingTask = (userContext.tasks || []).find((t) => {
-        const titleLower = t.title.toLowerCase();
-        return lowerPrompt.includes(titleLower) || titleLower.split(' ').some((word) => word.length > 3 && lowerPrompt.includes(word));
-      });
-
-      if (matchingTask) {
-        return {
-          intent: 'missing_information',
-          confidence: 0.95,
-          title: matchingTask.title,
-          targetItemId: matchingTask.id,
-          targetItemType: 'task',
-          existingItemSummary: `Task: ${matchingTask.title}`,
-          question: `Do you want to update your task "${matchingTask.title}"?`,
-          reasoning: 'Parsed reference to matching existing task in user context',
-        };
-      }
-    }
+  const contextMatch = matchContextItems(prompt, userContext);
+  if (contextMatch) {
+    return contextMatch;
   }
 
-  if (!apiKey || apiKey === 'your-gemini-api-key') {
+  if (!isApiKeyConfigured()) {
     return heuristicFallbackParse(prompt, now, conversationHistory, userContext);
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: apiKey! });
     const model = 'gemini-2.0-flash';
 
     let fullPrompt = prompt;
     if (conversationHistory && conversationHistory.length > 0) {
-      const historyStr = conversationHistory.map((h) => `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.text}`).join('\n');
+      const historyStr = conversationHistory.slice(-10).map((h) => `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.text}`).join('\n');
       fullPrompt = `Previous Conversation History:\n${historyStr}\n\nLatest User Follow-up Answer: ${prompt}`;
     }
 
@@ -161,6 +189,11 @@ Always output ISO 8601 format timestamps for dates/times (e.g., "2026-09-11T15:0
                 'suggest_choices',
                 'missing_information',
                 'create_plan',
+                'update_event',
+                'update_task',
+                'delete_event',
+                'delete_task',
+                'action_confirmation_required',
                 'weather_check',
                 'unknown',
               ],
@@ -168,6 +201,8 @@ Always output ISO 8601 format timestamps for dates/times (e.g., "2026-09-11T15:0
             confidence: { type: Type.NUMBER },
             title: { type: Type.STRING },
             goal: { type: Type.STRING },
+            targetItemId: { type: Type.STRING },
+            targetItemType: { type: Type.STRING, enum: ['event', 'task', 'note', 'reminder'] },
             possibleActions: {
               type: Type.ARRAY,
               items: { type: Type.STRING },
@@ -224,7 +259,7 @@ Always output ISO 8601 format timestamps for dates/times (e.g., "2026-09-11T15:0
     return await validateAndSanitizeResult(parsed, prompt, now);
   } catch (err: unknown) {
     console.error('Gemini AI API call failed, falling back to heuristic parser:', err);
-    return await heuristicFallbackParse(prompt, now, conversationHistory);
+    return await heuristicFallbackParse(prompt, now, conversationHistory, userContext);
   }
 }
 
@@ -265,15 +300,10 @@ export function hasExplicitTimeOfDay(text: string): boolean {
   if (/\b(?:at\s+)?(?:[01]?\d|2[0-3]):[0-5]\d\b/i.test(lower)) return true;
   if (/\bat\s+\d{1,2}\b/i.test(lower)) return true;
   if (/(?:in|after|for)\s+(?:\d+|a|an|one)\s*(?:sec|second|min|minute|hr|hour)s?\b/i.test(lower)) return true;
-  // Time-of-day words count as explicit time signals
   if (/\b(morning|afternoon|evening|night|midnight|noon|midday)\b/i.test(lower)) return true;
   return false;
 }
 
-/**
- * Maps a time-of-day word to a default hour (24h).
- * morning=9, afternoon=14, evening=18, night=21, noon=12, midnight=0
- */
 export function timeOfDayWordToHour(text: string): number | null {
   const lower = text.toLowerCase();
   if (/\bmorning\b/.test(lower)) return 9;
@@ -305,6 +335,27 @@ async function validateAndSanitizeResult(result: AIInterpretationResult, prompt:
 
   if (!validIntents.includes(result.intent)) {
     result.intent = 'suggest_choices';
+  }
+
+  if (result.confidence !== undefined && result.confidence < 0.6) {
+    const commitIntents = [
+      'create_task',
+      'create_note',
+      'create_event',
+      'create_reminder',
+      'create_plan',
+      'update_event',
+      'update_task',
+      'delete_event',
+      'delete_task',
+    ];
+    if (commitIntents.includes(result.intent)) {
+      result.intent = 'suggest_choices';
+      if (!result.question) {
+        result.question = `I'm not fully sure how to handle "${prompt}". Select an option below:`;
+      }
+      result.choices = generateDefaultChoices(prompt, now);
+    }
   }
 
   if (result.intent === 'weather_check' && !result.weatherForecast) {
@@ -349,7 +400,6 @@ async function validateAndSanitizeResult(result: AIInterpretationResult, prompt:
   }
 
   if (result.intent === 'create_event') {
-    // If prompt lacks an explicit time of day, DO NOT use a default time! Ask the user!
     if (!hasExplicitTimeOfDay(prompt)) {
       const cleanTitle = sanitizeTitle(result.title, prompt);
       result.intent = 'missing_information';
@@ -367,7 +417,9 @@ async function validateAndSanitizeResult(result: AIInterpretationResult, prompt:
 
   if (result.intent === 'unknown' || result.intent === 'suggest_choices') {
     result.intent = 'suggest_choices';
-    result.question = `How would you like to save or handle "${prompt}"?`;
+    if (!result.question) {
+      result.question = `How would you like to save or handle "${prompt}"?`;
+    }
     if (!result.choices || result.choices.length === 0) {
       result.choices = generateDefaultChoices(prompt, now);
     }
@@ -382,7 +434,7 @@ export function generateDefaultChoices(prompt: string, now: Date): AIChoice[] {
   startAt.setHours(15, 0, 0, 0);
   const endAt = new Date(startAt.getTime() + 60 * 60 * 1000);
 
-  const remindAt = new Date(now.getTime() + 4 * 60 * 60 * 1000); // 4 hrs from now
+  const remindAt = new Date(now.getTime() + 4 * 60 * 60 * 1000);
 
   const titleCap = prompt.charAt(0).toUpperCase() + prompt.slice(1);
 
@@ -433,48 +485,37 @@ export function generateDefaultChoices(prompt: string, now: Date): AIChoice[] {
 
 export function parseTimeFromText(text: string, now: Date): Date | null {
   const lower = text.toLowerCase();
+  let totalMs = 0;
+  let matchedDuration = false;
 
-  // Relative seconds e.g. "30 sec", "in 30 seconds", "after 10 sec", "a second"
-  const secMatch = lower.match(/(?:in|after|for)?\s*(\d+)\s*(?:secs?|seconds?)/i);
-  if (secMatch) {
-    const secs = parseInt(secMatch[1], 10);
-    return new Date(now.getTime() + secs * 1000);
+  const hrMatch = lower.match(/(?:in|after|for)?\s*(\d+)\s*(?:hrs?|hours?)/i) || lower.match(/(?:in|after|for)\s+(?:a|an|one|1)\s*(?:hr|hour)/i);
+  if (hrMatch) {
+    const hrs = hrMatch[1] && !isNaN(parseInt(hrMatch[1], 10)) ? parseInt(hrMatch[1], 10) : 1;
+    totalMs += hrs * 60 * 60 * 1000;
+    matchedDuration = true;
   }
 
-  const oneSecMatch = lower.match(/(?:in|after|for)\s+(?:a|an|one|1)\s*(?:sec|second)/i);
-  if (oneSecMatch) {
-    return new Date(now.getTime() + 30 * 1000);
-  }
-
-  // Relative minutes e.g. "30 min", "in 5 minutes", "after a minute"
-  const minMatch = lower.match(/(?:in|after|for)?\s*(\d+)\s*(?:mins?|minutes?)/i);
+  const minMatch = lower.match(/(?:in|after|for)?\s*(\d+)\s*(?:mins?|minutes?)/i) || lower.match(/(?:in|after|for)\s+(?:a|an|one|1)\s*(?:min|minute)/i);
   if (minMatch) {
-    const mins = parseInt(minMatch[1], 10);
-    return new Date(now.getTime() + mins * 60 * 1000);
+    const mins = minMatch[1] && !isNaN(parseInt(minMatch[1], 10)) ? parseInt(minMatch[1], 10) : 1;
+    totalMs += mins * 60 * 1000;
+    matchedDuration = true;
+  } else if (lower.includes('half an hour')) {
+    totalMs += 30 * 60 * 1000;
+    matchedDuration = true;
   }
 
-  const oneMinMatch = lower.match(/(?:in|after|for)\s+(?:a|an|one|1)\s*(?:min|minute)/i);
-  if (oneMinMatch) {
-    return new Date(now.getTime() + 1 * 60 * 1000);
+  const secMatch = lower.match(/(?:in|after|for)?\s*(\d+)\s*(?:secs?|seconds?)/i) || lower.match(/(?:in|after|for)\s+(?:a|an|one|1)\s*(?:sec|second)/i);
+  if (secMatch) {
+    const secs = secMatch[1] && !isNaN(parseInt(secMatch[1], 10)) ? parseInt(secMatch[1], 10) : 30;
+    totalMs += secs * 1000;
+    matchedDuration = true;
   }
 
-  if (lower.includes('half an hour')) {
-    return new Date(now.getTime() + 30 * 60 * 1000);
+  if (matchedDuration && totalMs > 0) {
+    return new Date(now.getTime() + totalMs);
   }
 
-  // Relative hours e.g. "in 2 hours", "after 1 hour", "an hour"
-  const hourRelMatch = lower.match(/(?:in|after|for)?\s*(\d+)\s*(?:hrs?|hours?)/i);
-  if (hourRelMatch) {
-    const hrs = parseInt(hourRelMatch[1], 10);
-    return new Date(now.getTime() + hrs * 60 * 60 * 1000);
-  }
-
-  const oneHourMatch = lower.match(/(?:in|after|for)\s+(?:a|an|one|1)\s*(?:hr|hour)/i);
-  if (oneHourMatch) {
-    return new Date(now.getTime() + 60 * 60 * 1000);
-  }
-
-  // Explicit time e.g. "at 8:30 pm", "at 3 pm", "3pm"
   const timeMatch = lower.match(/(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(pm|am)/i);
   if (timeMatch) {
     let hour = parseInt(timeMatch[1], 10);
@@ -493,7 +534,6 @@ export function parseTimeFromText(text: string, now: Date): Date | null {
     return target;
   }
 
-  // 24-hour format e.g. "at 16:00"
   const time24Match = lower.match(/(?:at\s+)?([01]?\d|2[0-3]):([0-5]\d)/i);
   if (time24Match) {
     const hour = parseInt(time24Match[1], 10);
@@ -533,7 +573,6 @@ async function heuristicFallbackParse(
 ): Promise<AIInterpretationResult> {
   const lower = prompt.toLowerCase();
 
-  // Weather query heuristic detection
   const isWeatherQuery = /(weather|rain|forecast|outdoor condition|will it rain|is it going to rain)/i.test(lower);
   if (isWeatherQuery) {
     const forecast = await getWeatherForecast();
@@ -546,7 +585,6 @@ async function heuristicFallbackParse(
     };
   }
 
-  // Destructive action check (e.g. delete/remove item) -> Action Confirmation Rule
   const isDeleteAction = /(delete|remove|cancel|erase)\s+(my\s+)?(.+)/i.test(lower);
   const isAffirmativeTurn = /^(yes|yeah|sure|confirm|do it|go ahead|ok)\b/i.test(lower.trim());
   if (isDeleteAction && !isAffirmativeTurn) {
@@ -568,59 +606,16 @@ async function heuristicFallbackParse(
     };
   }
 
-  // Context item matching: search existing events/tasks if prompt implies updating/moving/referencing existing items
-  if (userContext) {
-    const isMoveOrUpdate = /(move|reschedule|shift|postpone|change|update|cancel|delete)/i.test(lower);
-
-    if (isMoveOrUpdate) {
-      // Check existing events
-      const matchingEvent = (userContext.events || []).find((e) => {
-        const titleLower = e.title.toLowerCase();
-        return lower.includes(titleLower) || titleLower.split(' ').some((word) => word.length > 3 && lower.includes(word));
-      });
-
-      if (matchingEvent) {
-        const formattedStart = new Date(matchingEvent.startAt).toLocaleString([], { weekday: 'long', hour: '2-digit', minute: '2-digit' });
-        return {
-          intent: 'missing_information',
-          confidence: 0.95,
-          title: matchingEvent.title,
-          targetItemId: matchingEvent.id,
-          targetItemType: 'event',
-          existingItemSummary: `${matchingEvent.title} — ${formattedStart}`,
-          question: `Do you want to move your ${matchingEvent.title} (${formattedStart}) to next week?`,
-          reasoning: 'Parsed reference to matching existing event in user context',
-        };
-      }
-
-      // Check existing tasks
-      const matchingTask = (userContext.tasks || []).find((t) => {
-        const titleLower = t.title.toLowerCase();
-        return lower.includes(titleLower) || titleLower.split(' ').some((word) => word.length > 3 && lower.includes(word));
-      });
-
-      if (matchingTask) {
-        return {
-          intent: 'missing_information',
-          confidence: 0.95,
-          title: matchingTask.title,
-          targetItemId: matchingTask.id,
-          targetItemType: 'task',
-          existingItemSummary: `Task: ${matchingTask.title}`,
-          question: `Do you want to update your task "${matchingTask.title}"?`,
-          reasoning: 'Parsed reference to matching existing task in user context',
-        };
-      }
-    }
+  const contextMatch = matchContextItems(prompt, userContext);
+  if (contextMatch) {
+    return contextMatch;
   }
 
-  // If there's conversation history, perform stateful multi-turn follow-up resolution!
   if (conversationHistory && conversationHistory.length > 0) {
     const lastAssistantMsg = [...conversationHistory].reverse().find((h) => h.role === 'assistant');
     const firstUserMsg = conversationHistory.find((h) => h.role === 'user')?.text || 'Event';
     const assistantText = lastAssistantMsg?.text?.toLowerCase() || '';
 
-    // 1. Affirmative answer to an existing item update/reschedule question
     const isAffirmative = /^(yes|yeah|sure|yep|confirm|do it|go ahead|move it|update it|ok|okay)\b/i.test(lower.trim());
     if (isAffirmative && (assistantText.includes('move') || assistantText.includes('update') || assistantText.includes('reschedule') || assistantText.includes('dentist'))) {
       const matchItemTitle = assistantText.match(/(?:move|update|reschedule)\s+(?:your\s+)?([^?(]+)/i);
@@ -633,7 +628,6 @@ async function heuristicFallbackParse(
       };
     }
 
-    // 2. Choice selection follow-up (e.g. user selects "save as note", "task", "option 1", etc.)
     const isChoiceAnswer = /^(note|save as note|task|add task|event|schedule event|reminder|set reminder|1|2|3|4|first|second|third)\b/i.test(lower.trim());
     if (isChoiceAnswer && (assistantText.includes('how would you like') || assistantText.includes('handle this') || assistantText.includes('choices') || assistantText.includes('suggestions'))) {
       if (lower.includes('note')) {
@@ -655,17 +649,14 @@ async function heuristicFallbackParse(
       }
     }
 
-    // 3. Time answer follow-up to missing time question
     const askedForTime = assistantText.includes('time') || assistantText.includes('what time') || assistantText.includes('when');
     const looksLikeTimeAnswer = /\d/.test(lower) || lower.includes('pm') || lower.includes('am') || lower.includes('at') ||
       /\b(morning|afternoon|evening|night|noon|midnight)\b/.test(lower);
 
     if (askedForTime && looksLikeTimeAnswer) {
-      // Extract time-of-day context from previous user messages to disambiguate AM/PM
       const allUserText = conversationHistory.filter((h) => h.role === 'user').map((h) => h.text).join(' ').toLowerCase();
       const prevTodHour = timeOfDayWordToHour(allUserText);
 
-      // Check 3 or 4 digit compact numbers e.g. "255" -> 2:55, "1430" -> 14:30
       const compactMatch = lower.match(/\b(\d{3,4})\b/);
       let hour: number;
       let minute = 0;
@@ -688,7 +679,6 @@ async function heuristicFallbackParse(
       if (minute >= 60) minute = 0;
       if (hour > 23) hour = hour % 24;
 
-      // AM/PM resolution: for evening events (party, dinner, concert) or ambiguous hours 1-11 without AM/PM, default to PM
       const isEveningEvent = /(party|dinner|concert|movie|show|hangout|drink|night)/i.test(allUserText);
       if (lower.includes('pm') && hour < 12) {
         hour += 12;
@@ -696,13 +686,12 @@ async function heuristicFallbackParse(
         hour = 0;
       } else if (!lower.includes('pm') && !lower.includes('am')) {
         if (isEveningEvent && hour >= 1 && hour <= 11) {
-          hour += 12; // e.g. 2:55 for a party -> 2:55 PM (14:55)
+          hour += 12;
         } else if (prevTodHour !== null && prevTodHour >= 12 && hour >= 1 && hour <= 11) {
           hour += 12;
         }
       }
 
-      // Determine date: check if previous user message mentioned tomorrow or next week
       const mentionedTomorrow = allUserText.includes('tomorrow');
       const mentionedNextWeek = allUserText.includes('next week');
       const start = new Date(now);
@@ -713,14 +702,12 @@ async function heuristicFallbackParse(
       }
       start.setHours(hour, minute, 0, 0);
 
-      // If resolved time has already passed today and tomorrow wasn't mentioned, move to tomorrow
       if (start.getTime() <= now.getTime() && !mentionedTomorrow) {
         start.setDate(start.getDate() + 1);
       }
 
       const end = new Date(start.getTime() + 60 * 60 * 1000);
 
-      // Extract event noun title from original user message
       const eventNounMatch = firstUserMsg.match(/\b(appointment|dentist|doctor|meeting|flight|date|interview|test|party|dinner|lunch|concert|event|game|class|match|show|movie|hangout)\b/i);
       const title = eventNounMatch
         ? eventNounMatch[1].charAt(0).toUpperCase() + eventNounMatch[1].slice(1)
@@ -737,7 +724,6 @@ async function heuristicFallbackParse(
     }
   }
 
-  // Goal / Multi-step plan heuristic detection
   const isGoalPhrase = /(prepare for|plan for|plan my|moving to|move to|relocate|trip to|travel to|vacation|project to|organize my|help me prepare|prepare to|need to prepare|need to move|need to buy|want to buy|need to get|want to get|get my|buy a car|buy a house|buy a vehicle|buy an apartment)/i.test(lower);
   const isMinorTask = /^(buy|pick up|clean|call|email|text|send)\s+(milk|groceries|coffee|mom|dad|laundry|friend|doctor|dentist|dish)/i.test(lower);
 
@@ -765,17 +751,14 @@ async function heuristicFallbackParse(
     };
   }
 
-  // Event / Appointment / Date / Game / Class detection (prioritized over simple reminder regex)
   const eventWordMatch = lower.match(/\b(dentist appointment|doctor appointment|appointment|dentist|doctor|meeting|flight|date|interview|test|party|dinner|lunch|concert|event|game|class|match|show|movie|hangout)\b/i);
   const isEventWord = !!eventWordMatch;
   if (isEventWord) {
-    // Build a clean, short title from the matched event phrase/noun
     const rawMatched = eventWordMatch![1];
     let nounTitle = rawMatched.charAt(0).toUpperCase() + rawMatched.slice(1);
     if (lower.includes('dentist appointment')) nounTitle = 'Dentist appointment';
     else if (lower.includes('doctor appointment')) nounTitle = 'Doctor appointment';
 
-    // Check if prompt specifies a general time of day (morning, afternoon, evening) WITHOUT an explicit numeric hour
     const hasNumericTime = /\b\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b/i.test(lower) || /\bat\s+\d{1,2}\b/i.test(lower);
     const todMatch = lower.match(/\b(morning|afternoon|evening)\b/i);
 
@@ -801,8 +784,9 @@ async function heuristicFallbackParse(
 
         if (!cleanTitle || cleanTitle.length < 2) cleanTitle = nounTitle;
         cleanTitle = cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1);
-        if (lower.includes('sarah') && !cleanTitle.toLowerCase().includes('sarah')) {
-          cleanTitle = `Meeting with Sarah`;
+        const personMatch = lower.match(/with\s+([a-z]+)/i);
+        if (personMatch && !cleanTitle.toLowerCase().includes(personMatch[1].toLowerCase())) {
+          cleanTitle = `Meeting with ${personMatch[1].charAt(0).toUpperCase() + personMatch[1].slice(1)}`;
         }
 
         const choicesData = buildCalendarAvailabilityChoices(cleanTitle, availableSlots);
@@ -827,9 +811,7 @@ async function heuristicFallbackParse(
       };
     }
 
-    // Try explicit numeric time first
     const timeMatch = prompt.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
-    // Try time-of-day word (morning, afternoon, etc.)
     const todHour = timeOfDayWordToHour(prompt);
 
     let hour: number;
@@ -840,14 +822,13 @@ async function heuristicFallbackParse(
       const ampm = timeMatch[3]?.toLowerCase();
       if (ampm === 'pm' && hour < 12) hour += 12;
       if (ampm === 'am' && hour === 12) hour = 0;
-      // If no AM/PM given and hour is ambiguous (1-6), prefer the time-of-day context
       if (!ampm && hour >= 1 && hour <= 6 && todHour !== null) {
-        hour = todHour < 12 ? hour : hour + 12; // morning → keep as AM; afternoon/evening → add 12
+        hour = todHour < 12 ? hour : hour + 12;
       }
     } else if (todHour !== null) {
       hour = todHour;
     } else {
-      hour = 9; // safe default
+      hour = 9;
     }
 
     const start = new Date(now);
@@ -892,7 +873,6 @@ async function heuristicFallbackParse(
     };
   }
 
-  // Note detection (passwords, wifi, notes, stored info)
   if (lower.includes('password') || lower.includes('wifi') || lower.includes('note:') || lower.includes('remember that') || lower.includes('secret') || lower.includes('code')) {
     let cleanTitle = 'Saved Note';
     if (lower.includes('wifi') && lower.includes('password')) cleanTitle = 'WiFi Password';
@@ -909,12 +889,10 @@ async function heuristicFallbackParse(
     };
   }
 
-  // Flexible notification & reminder regex pattern
   const isNotificationIntent = /(notify|remind|ping|alert|let me know|warn|tell me|wake me|heads up)/i.test(lower);
   if (isNotificationIntent) {
     let remindDate = parseTimeFromText(prompt, now);
     if (!remindDate) {
-      // Default to 1 hour from now if no time or relative duration specified
       remindDate = new Date(now.getTime() + 60 * 60 * 1000);
     }
 
@@ -929,7 +907,6 @@ async function heuristicFallbackParse(
     };
   }
 
-  // General Task / Scheduled Item detection (e.g. "i have something to do in 30 sec", "do X at 3pm", "buy groceries")
   const parsedTime = parseTimeFromText(prompt, now);
   const isTaskAction = /(do|have|need|got|must|should|buy|todo|clean|submit|call|go|get|prepare|finish|task)/i.test(lower);
 
@@ -937,7 +914,6 @@ async function heuristicFallbackParse(
     const due = parsedTime || new Date(now.getTime() + 24 * 60 * 60 * 1000);
     const title = prompt.length > 50 ? prompt.slice(0, 47).trim() + '...' : prompt;
 
-    // If time is short (e.g. within 10 minutes), create a reminder alert immediately
     const isShortTime = parsedTime && (parsedTime.getTime() - now.getTime() <= 10 * 60 * 1000);
 
     if (isShortTime) {
@@ -960,7 +936,6 @@ async function heuristicFallbackParse(
     };
   }
 
-  // Fallback to interactive choice suggestion ONLY for ambiguous non-time phrases (e.g. "feeling tired" or "new york")
   return {
     intent: 'suggest_choices',
     confidence: 0.8,

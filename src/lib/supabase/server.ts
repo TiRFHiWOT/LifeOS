@@ -3,22 +3,27 @@ import { cookies } from 'next/headers';
 import { Database } from '@/types/database';
 
 export async function createClient() {
-  const cookieStore = await cookies();
+  let cookieStore: { getAll: () => Array<{ name: string; value: string }>; set: (name: string, value: string, options?: unknown) => void };
+  try {
+    cookieStore = await cookies();
+  } catch {
+    cookieStore = { getAll: () => [], set: () => {} };
+  }
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key';
 
   return createServerClient<Database>(url, key, {
     cookies: {
       getAll() {
-        return cookieStore.getAll();
+        return cookieStore.getAll ? cookieStore.getAll() : [];
       },
       setAll(cookiesToSet) {
         try {
           cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
+            cookieStore.set ? cookieStore.set(name, value, options) : null
           );
         } catch {
-          // The `setAll` method was called from a Server Component.
         }
       },
     },

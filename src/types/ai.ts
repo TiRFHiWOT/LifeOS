@@ -27,6 +27,8 @@ export interface UserContextSummary {
   events?: Array<{ id: string; title: string; startAt: string; endAt: string }>;
   notes?: Array<{ id: string; title: string; content?: string }>;
   reminders?: Array<{ id: string; title?: string; remindAt: string }>;
+  timeZone?: string;
+  userLocation?: string;
 }
 
 export interface AIInterpretationResult {
@@ -53,4 +55,10 @@ export interface AIInterpretationResult {
   requiresConfirmation?: boolean;
   confirmationMessage?: string;
   pendingAction?: AIInterpretationResult;
+  pendingClarification?: {
+    intent: AIIntent;
+    targetItemId?: string;
+    targetItemType?: 'event' | 'task' | 'note' | 'reminder';
+    field?: string;
+  };
 }

@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     const googleAccessToken = cookieStore.get('google_access_token')?.value;
 
     const body = await request.json();
-    const { prompt, referenceDateISO, conversationHistory, interpretation: providedInterpretation } = body;
+    const { prompt, referenceDateISO, conversationHistory, interpretation: providedInterpretation, timeZone, userLocation } = body;
 
     let interpretation = providedInterpretation;
 
@@ -41,6 +41,8 @@ export async function POST(request: Request) {
         events: events.map((e) => ({ id: e.id, title: e.title, startAt: e.start_at, endAt: e.end_at })),
         notes: notes.map((n) => ({ id: n.id, title: n.title, content: n.content })),
         reminders: reminders.map((r) => ({ id: r.id, remindAt: r.remind_at })),
+        timeZone,
+        userLocation,
       };
 
       interpretation = await interpretNaturalLanguage(prompt.trim(), referenceDateISO, conversationHistory, userContext);

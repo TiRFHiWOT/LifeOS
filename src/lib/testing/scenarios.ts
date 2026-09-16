@@ -1,7 +1,7 @@
-import { interpretNaturalLanguage } from '../../services/ai';
-import { generateGoalPlan, completePlanStep } from '../../services/planner';
-import { generateProactiveAgentAlerts } from '../../services/reminderEngine';
+import { interpretNaturalLanguage, parseTimeFromText, matchContextItems } from '../../services/ai';
+import { generateGoalPlan, completePlanStep, evaluatePlanDependencies } from '../../services/planner';
 import { getAgentActivityLogs } from '../../services/agentActivityLog';
+import { orchestrateAIAction } from '../../services/orchestrator';
 
 export interface ScenarioTestResult {
   scenarioName: string;
@@ -117,7 +117,7 @@ export async function runDemoScenarios(): Promise<ScenarioTestResult[]> {
     });
   }
 
-  // Scenario 5 — Multi-Step Goal Understanding (Phase 1 / Step 1)
+  // Scenario 5 — Multi-Step Goal Understanding
   try {
     const prompt5 = 'I need to prepare for my trip to Nairobi next month.';
     const interp5 = await interpretNaturalLanguage(prompt5, refDateISO);
@@ -140,7 +140,7 @@ export async function runDemoScenarios(): Promise<ScenarioTestResult[]> {
     });
   }
 
-  // Scenario 6 — Planning Engine (Phase 2 / Step 2)
+  // Scenario 6 — Planning Engine
   try {
     const prompt6 = 'I need to move to a new apartment next month.';
     const plan6 = await generateGoalPlan(prompt6, refDateISO);
@@ -166,7 +166,7 @@ export async function runDemoScenarios(): Promise<ScenarioTestResult[]> {
     });
   }
 
-  // Scenario 7 — Connect Plans to Existing Actions (Phase 3 / Step 3)
+  // Scenario 7 — Connect Plans to Existing Actions
   try {
     const prompt7 = 'Prepare for my trip to Nairobi.';
     const plan7 = await generateGoalPlan(prompt7, refDateISO);
@@ -190,7 +190,7 @@ export async function runDemoScenarios(): Promise<ScenarioTestResult[]> {
     });
   }
 
-  // Scenario 8 — Context Awareness & Existing Item Search (Phase 4 / Step 4)
+  // Scenario 8 — Context Awareness & Existing Item Search
   try {
     const prompt8 = 'Move my dentist appointment to next week.';
     const mockContext = {
@@ -216,7 +216,7 @@ export async function runDemoScenarios(): Promise<ScenarioTestResult[]> {
     });
   }
 
-  // Scenario 9 — Calendar Intelligence & Availability (Phase 5 / Step 5)
+  // Scenario 9 — Calendar Intelligence & Availability
   try {
     const prompt9 = 'Schedule a meeting with Sarah tomorrow afternoon.';
     const mockEvents = {
@@ -242,15 +242,13 @@ export async function runDemoScenarios(): Promise<ScenarioTestResult[]> {
     });
   }
 
-  // Scenario 10 — Plan Dependencies & Completion Tracking (Phase 6 / Step 6)
+  // Scenario 10 — Plan Dependencies & Completion Tracking
   try {
     const plan10 = await generateGoalPlan('I want to travel to Nairobi next month.', refDateISO);
-    // Initial state check: step 2 (Book accommodation) should be blocked by step 1 (Check passport)
     const step1Title = plan10.steps[0]?.title || 'Check passport';
     const step2Before = plan10.steps[1];
     const isStep2BlockedBefore = step2Before?.status === 'blocked' || step2Before?.status === 'pending';
 
-    // Complete step 1
     const updatedPlan = completePlanStep(plan10, step1Title);
     const step2After = updatedPlan.steps[1];
     const isStep2UnblockedAfter = step2After?.status === 'ready' || step2After?.status === 'in_progress' || step2After?.status === 'completed';
@@ -275,10 +273,9 @@ export async function runDemoScenarios(): Promise<ScenarioTestResult[]> {
     });
   }
 
-  // Scenario 11 — Proactive Agent Alert Engine (Phase 7 / Step 7)
+  // Scenario 11 — Proactive Agent Alert Engine
   try {
     const prompt11 = 'Proactive Agent Notification Engine Check';
-    // Test logic formatting
     const sampleEventTitle = 'Nairobi trip';
     const sampleUnfinishedTasks = ['Check passport', 'Prepare packing list'];
     const alertMsg = `Your ${sampleEventTitle} is tomorrow. You still have ${sampleUnfinishedTasks.length} preparation tasks unfinished.`;
@@ -302,7 +299,7 @@ export async function runDemoScenarios(): Promise<ScenarioTestResult[]> {
     });
   }
 
-  // Scenario 12 — External Weather API Integration (Phase 8 / Step 8)
+  // Scenario 12 — External Weather API Integration
   try {
     const prompt12 = 'Will it rain tomorrow during my outdoor event?';
     const interp12 = await interpretNaturalLanguage(prompt12, refDateISO);
@@ -325,7 +322,7 @@ export async function runDemoScenarios(): Promise<ScenarioTestResult[]> {
     });
   }
 
-  // Scenario 13 — Stateful Multi-Turn Conversational Follow-ups (Phase 9 / Step 9)
+  // Scenario 13 — Stateful Multi-Turn Conversational Follow-ups
   try {
     const prompt13a = 'Move my dentist appointment to next week.';
     const mockContext = {
@@ -359,7 +356,7 @@ export async function runDemoScenarios(): Promise<ScenarioTestResult[]> {
     });
   }
 
-  // Scenario 14 — Action Confirmation Rules (Phase 10 / Step 10)
+  // Scenario 14 — Action Confirmation Rules
   try {
     const prompt14 = 'Delete my dentist appointment';
     const interp14 = await interpretNaturalLanguage(prompt14, refDateISO);
@@ -383,7 +380,7 @@ export async function runDemoScenarios(): Promise<ScenarioTestResult[]> {
     });
   }
 
-  // Scenario 15 — LifeOS Activity Log Timeline View (Phase 11 / Step 11)
+  // Scenario 15 — LifeOS Activity Log Timeline View
   try {
     const logs = getAgentActivityLogs();
     const pass15 = Array.isArray(logs);
@@ -400,6 +397,188 @@ export async function runDemoScenarios(): Promise<ScenarioTestResult[]> {
       scenarioName: 'Scenario 15 — Agent Activity Log View',
       passed: false,
       prompt: 'Agent Activity Log Timeline check',
+      intentFound: 'error',
+      outputSummary: 'Test failed',
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+
+  // Scenario 16 — Custom Location Planning
+  try {
+    const prompt16 = 'Trip to Hawassa';
+    const plan16 = await generateGoalPlan(prompt16, { referenceDateISO: refDateISO, userLocation: 'Dire Dawa, Ethiopia' });
+    const pass16 = plan16.steps.length > 0 && !plan16.steps.some(s => s.title.toLowerCase().includes('passport'));
+    results.push({
+      scenarioName: 'Scenario 16 — Custom Location Planning',
+      passed: pass16,
+      prompt: prompt16,
+      intentFound: 'create_plan',
+      outputSummary: `Steps generated: ${plan16.steps.length}, Passport check absent: ${pass16}`,
+    });
+  } catch (err: unknown) {
+    results.push({
+      scenarioName: 'Scenario 16 — Custom Location Planning',
+      passed: false,
+      prompt: 'Trip to Hawassa',
+      intentFound: 'error',
+      outputSummary: 'Test failed',
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+
+  // Scenario 17 — Compound Duration Parsing
+  try {
+    const now17 = new Date(refDateISO);
+    const parsedDate = parseTimeFromText('1 hour and 30 minutes', now17);
+    const diffMins = parsedDate ? Math.round((parsedDate.getTime() - now17.getTime()) / (60 * 1000)) : 0;
+    const pass17 = diffMins === 90;
+    results.push({
+      scenarioName: 'Scenario 17 — Compound Duration Parsing',
+      passed: pass17,
+      prompt: '1 hour and 30 minutes',
+      intentFound: 'time_parse',
+      outputSummary: `Parsed diff: ${diffMins} mins (Expected: 90 mins)`,
+    });
+  } catch (err: unknown) {
+    results.push({
+      scenarioName: 'Scenario 17 — Compound Duration Parsing',
+      passed: false,
+      prompt: '1 hour and 30 minutes',
+      intentFound: 'error',
+      outputSummary: 'Test failed',
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+
+  // Scenario 18 — Parallel Step Dependencies & ID Resolution
+  try {
+    const rawPlan = {
+      goal: 'Test Plan',
+      description: 'Testing ID dependencies',
+      createdAt: refDateISO,
+      status: 'ready' as const,
+      steps: [
+        { id: 'step-1', title: 'Step 1', description: 'First step', dueDate: null, priority: 'high' as const, actionType: 'task' as const, dependency: null, status: 'completed' as const },
+        { id: 'step-2', title: 'Step 2', description: 'Second step', dueDate: null, priority: 'medium' as const, actionType: 'task' as const, dependency: 'step-1', status: 'pending' as const },
+      ],
+    };
+    const evalResult = evaluatePlanDependencies(rawPlan);
+    const pass18 = evalResult.steps[1].status === 'ready';
+    results.push({
+      scenarioName: 'Scenario 18 — Parallel Step Dependencies & ID Resolution',
+      passed: pass18,
+      prompt: 'Test step ID dependency resolution',
+      intentFound: 'plan_evaluate',
+      outputSummary: `Step 2 resolved status: "${evalResult.steps[1].status}" (Expected: "ready")`,
+    });
+  } catch (err: unknown) {
+    results.push({
+      scenarioName: 'Scenario 18 — Parallel Step Dependencies & ID Resolution',
+      passed: false,
+      prompt: 'Test step ID dependency resolution',
+      intentFound: 'error',
+      outputSummary: 'Test failed',
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+
+  // Scenario 19 — Context Match Structured Clarification
+  try {
+    const mockContext19 = {
+      events: [{ id: 'evt-abc', title: 'Doctor appointment', startAt: '2026-09-10T10:00:00.000Z', endAt: '2026-09-10T11:00:00.000Z' }],
+    };
+    const matchRes = matchContextItems('Reschedule doctor appointment', mockContext19);
+    const pass19 = matchRes !== null && matchRes.targetItemId === 'evt-abc' && matchRes.pendingClarification?.intent === 'update_event';
+    results.push({
+      scenarioName: 'Scenario 19 — Context Match Structured Clarification',
+      passed: pass19,
+      prompt: 'Reschedule doctor appointment',
+      intentFound: matchRes?.intent || 'none',
+      outputSummary: `Matched targetItemId: "${matchRes?.targetItemId}", pendingClarification intent: "${matchRes?.pendingClarification?.intent}"`,
+    });
+  } catch (err: unknown) {
+    results.push({
+      scenarioName: 'Scenario 19 — Context Match Structured Clarification',
+      passed: false,
+      prompt: 'Reschedule doctor appointment',
+      intentFound: 'error',
+      outputSummary: 'Test failed',
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+
+  // Scenario 20 — Orchestrator Task Update Action Type
+  try {
+    const res20 = await orchestrateAIAction('test-user-id', {
+      intent: 'update_task',
+      confidence: 0.95,
+      title: 'Update existing task title',
+    });
+    const pass20 = res20.actionType === 'task_updated';
+    results.push({
+      scenarioName: 'Scenario 20 — Orchestrator Task Update Action Type',
+      passed: pass20,
+      prompt: 'update_task intent execution',
+      intentFound: 'update_task',
+      outputSummary: `Orchestrator returned actionType: "${res20.actionType}" (Expected: "task_updated")`,
+    });
+  } catch (err: unknown) {
+    results.push({
+      scenarioName: 'Scenario 20 — Orchestrator Task Update Action Type',
+      passed: false,
+      prompt: 'update_task intent execution',
+      intentFound: 'error',
+      outputSummary: 'Test failed',
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+
+  // Scenario 21 — Orchestrator Task Delete Action Type
+  try {
+    const res21 = await orchestrateAIAction('test-user-id', {
+      intent: 'delete_task',
+      confidence: 0.95,
+      title: 'Delete existing task title',
+    });
+    const pass21 = res21.actionType === 'task_deleted';
+    results.push({
+      scenarioName: 'Scenario 21 — Orchestrator Task Delete Action Type',
+      passed: pass21,
+      prompt: 'delete_task intent execution',
+      intentFound: 'delete_task',
+      outputSummary: `Orchestrator returned actionType: "${res21.actionType}" (Expected: "task_deleted")`,
+    });
+  } catch (err: unknown) {
+    results.push({
+      scenarioName: 'Scenario 21 — Orchestrator Task Delete Action Type',
+      passed: false,
+      prompt: 'delete_task intent execution',
+      intentFound: 'error',
+      outputSummary: 'Test failed',
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+
+  // Scenario 22 — Orchestrator Event Delete Action Type
+  try {
+    const res22 = await orchestrateAIAction('test-user-id', {
+      intent: 'delete_event',
+      confidence: 0.95,
+      title: 'Delete existing event title',
+    });
+    const pass22 = res22.actionType === 'event_deleted';
+    results.push({
+      scenarioName: 'Scenario 22 — Orchestrator Event Delete Action Type',
+      passed: pass22,
+      prompt: 'delete_event intent execution',
+      intentFound: 'delete_event',
+      outputSummary: `Orchestrator returned actionType: "${res22.actionType}" (Expected: "event_deleted")`,
+    });
+  } catch (err: unknown) {
+    results.push({
+      scenarioName: 'Scenario 22 — Orchestrator Event Delete Action Type',
+      passed: false,
+      prompt: 'delete_event intent execution',
       intentFound: 'error',
       outputSummary: 'Test failed',
       error: err instanceof Error ? err.message : 'Unknown error',

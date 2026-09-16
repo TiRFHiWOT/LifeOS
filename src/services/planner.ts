@@ -13,19 +13,36 @@ import { createEvent } from '@/services/events';
 import { createReminder } from '@/services/reminders';
 import { createNote } from '@/services/notes';
 
+export interface PlanGenerationOptions {
+  referenceDateISO?: string;
+  userLocation?: string;
+  userTimeZone?: string;
+}
+
 export async function generateGoalPlan(
   goalPrompt: string,
-  referenceDateISO?: string
+  options?: PlanGenerationOptions | string
 ): Promise<GoalPlan> {
   const apiKey = process.env.GEMINI_API_KEY;
+
+  let referenceDateISO: string | undefined;
+  let userLocation = 'Addis Ababa, Ethiopia';
+
+  if (typeof options === 'string') {
+    referenceDateISO = options;
+  } else if (options) {
+    referenceDateISO = options.referenceDateISO;
+    if (options.userLocation) {
+      userLocation = options.userLocation;
+    }
+  }
+
   const now = referenceDateISO ? new Date(referenceDateISO) : new Date();
   const currentDateStr = now.toISOString();
 
   if (!apiKey || apiKey === 'your-gemini-api-key') {
-    return generateFallbackGoalPlan(goalPrompt, now);
+    return generateFallbackGoalPlan(goalPrompt, now, userLocation);
   }
-
-  const userLocation = 'Addis Ababa, Ethiopia';
 
   const systemInstruction = `
 You are the AI Planning Engine for LifeOS. Your task is to take a user's goal statement and convert it into a structured, step-by-step action plan.
@@ -42,11 +59,13 @@ Geographical & Travel Intelligence Rules:
 5. For all other goals, generate 3 to 6 logical, ordered action steps tailored to the user's request.
 
 Rules for Steps:
+- id: unique string step identifier e.g. "step-1"
 - title: concise actionable title (e.g. "Contact landlord")
 - description: 1-2 sentence explanation of what needs to be done.
 - dueDate: ISO 8601 date string relative to the reference time context, or null if flexible.
 - priority: 'high', 'medium', or 'low'.
-- dependency: title of an earlier step that must be completed first, or null if independent.
+- actionType: 'task', 'event', 'reminder', or 'note'.
+- dependency: step id or title of an earlier step that must be completed first, or null if independent.
 - status: 'pending'.
 `;
 
@@ -70,10 +89,12 @@ Rules for Steps:
               items: {
                 type: Type.OBJECT,
                 properties: {
+                  id: { type: Type.STRING },
                   title: { type: Type.STRING },
                   description: { type: Type.STRING },
                   dueDate: { type: Type.STRING },
                   priority: { type: Type.STRING, enum: ['high', 'medium', 'low'] },
+                  actionType: { type: Type.STRING, enum: ['task', 'event', 'reminder', 'note'] },
                   dependency: { type: Type.STRING },
                   status: { type: Type.STRING, enum: ['pending', 'in_progress', 'completed'] },
                 },
@@ -91,40 +112,45 @@ Rules for Steps:
     }
 
     const parsed: GoalPlan = JSON.parse(response.text);
-    return sanitizeGoalPlan(parsed, goalPrompt, now);
+    return sanitizeGoalPlan(parsed, goalPrompt, now, userLocation);
   } catch (err: unknown) {
     console.error('Gemini Planning Engine API call failed, falling back to heuristic planner:', err);
-    return generateFallbackGoalPlan(goalPrompt, now);
+    return generateFallbackGoalPlan(goalPrompt, now, userLocation);
   }
 }
 
-function sanitizeGoalPlan(plan: GoalPlan, rawPrompt: string, now: Date): GoalPlan {
+function sanitizeGoalPlan(plan: GoalPlan, rawPrompt: string, now: Date, userLocation: string): GoalPlan {
   const goal = plan.goal?.trim() || rawPrompt;
   const description = plan.description?.trim() || `Step-by-step plan for: ${goal}`;
 
   const sanitizedSteps: PlanStep[] = (plan.steps || []).map((step, index) => {
+    const id = step.id?.trim() || `step-${index + 1}`;
     const priority: PlanStepPriority = ['high', 'medium', 'low'].includes(step.priority)
       ? step.priority
       : index === 0
       ? 'high'
       : 'medium';
 
-    const status: PlanStepStatus = ['pending', 'in_progress', 'completed'].includes(step.status)
+    const status: PlanStepStatus = ['pending', 'in_progress', 'completed', 'blocked', 'failed'].includes(step.status)
       ? step.status
       : 'pending';
 
+    const actionType = step.actionType || classifyStepActionType(step.title || '', step.description || '');
+
     return {
+      id,
       title: step.title?.trim() || `Step ${index + 1}`,
       description: step.description?.trim() || `Execute action for ${step.title || 'step'}`,
       dueDate: step.dueDate || null,
       priority,
-      dependency: step.dependency || (index > 0 ? plan.steps[index - 1]?.title || null : null),
+      actionType,
+      dependency: step.dependency || null,
       status,
     };
   });
 
   if (sanitizedSteps.length === 0) {
-    return generateFallbackGoalPlan(rawPrompt, now);
+    return generateFallbackGoalPlan(rawPrompt, now, userLocation);
   }
 
   const rawPlan: GoalPlan = {
@@ -138,7 +164,8 @@ function sanitizeGoalPlan(plan: GoalPlan, rawPrompt: string, now: Date): GoalPla
   return evaluatePlanDependencies(rawPlan);
 }
 
-export function generateFallbackGoalPlan(prompt: string, now: Date): GoalPlan {
+export function generateFallbackGoalPlan(prompt: string, now: Date, userLocation?: string): GoalPlan {
+  const lower = prompt.toLowerCase();
   const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const nextMonth = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
@@ -152,67 +179,136 @@ export function generateFallbackGoalPlan(prompt: string, now: Date): GoalPlan {
   }
   cleanGoal = cleanGoal.charAt(0).toUpperCase() + cleanGoal.slice(1);
 
+  const isIntlTravel = /(nairobi|paris|london|dubai|tokyo|international|passport|visa|foreign)/i.test(lower);
+  const isDomesticTravel = /(hawassa|bahir dar|dire dawa|gonder|mekele|domestic)/i.test(lower);
+
+  let steps: PlanStep[] = [];
+
+  if (isIntlTravel) {
+    steps = [
+      {
+        id: 'step-1',
+        title: 'Check Passport & Visa Requirements',
+        description: `Verify passport validity and visa requirements for travel to destination.`,
+        dueDate: nextWeek,
+        priority: 'high',
+        actionType: 'task',
+        dependency: null,
+        status: 'pending',
+      },
+      {
+        id: 'step-2',
+        title: 'Book International Flight & Stay',
+        description: `Book flights and reserve hotel accommodation for your trip.`,
+        dueDate: nextWeek,
+        priority: 'high',
+        actionType: 'event',
+        dependency: 'step-1',
+        status: 'pending',
+      },
+      {
+        id: 'step-3',
+        title: 'Set Travel Reminder & Packing List',
+        description: `Prepare packing list and set flight reminder.`,
+        dueDate: nextMonth,
+        priority: 'medium',
+        actionType: 'reminder',
+        dependency: 'step-2',
+        status: 'pending',
+      },
+    ];
+  } else if (isDomesticTravel) {
+    steps = [
+      {
+        id: 'step-1',
+        title: 'Organize Domestic Transport & ID',
+        description: `Verify local government ID and arrange transport tickets.`,
+        dueDate: nextWeek,
+        priority: 'high',
+        actionType: 'task',
+        dependency: null,
+        status: 'pending',
+      },
+      {
+        id: 'step-2',
+        title: 'Book Local Lodging',
+        description: `Reserve hotel or guest house at destination city.`,
+        dueDate: nextWeek,
+        priority: 'medium',
+        actionType: 'event',
+        dependency: 'step-1',
+        status: 'pending',
+      },
+    ];
+  } else {
+    steps = [
+      {
+        id: 'step-1',
+        title: `Research prerequisites for ${cleanGoal}`,
+        description: `Identify essential requirements, costs, and preliminary steps for ${cleanGoal.toLowerCase()}.`,
+        dueDate: nextWeek,
+        priority: 'high',
+        actionType: 'task',
+        dependency: null,
+        status: 'pending',
+      },
+      {
+        id: 'step-2',
+        title: `Prepare documentation & resources`,
+        description: `Gather required forms, applications, financing, or items needed for ${cleanGoal.toLowerCase()}.`,
+        dueDate: nextWeek,
+        priority: 'high',
+        actionType: 'task',
+        dependency: 'step-1',
+        status: 'pending',
+      },
+      {
+        id: 'step-3',
+        title: `Schedule & execute primary action`,
+        description: `Book appointments, complete test/inspection/purchase, or finalize main milestone.`,
+        dueDate: nextMonth,
+        priority: 'medium',
+        actionType: 'event',
+        dependency: 'step-2',
+        status: 'pending',
+      },
+      {
+        id: 'step-4',
+        title: `Verify & finalize completion`,
+        description: `Confirm official registration, records, or follow-up details for ${cleanGoal.toLowerCase()}.`,
+        dueDate: nextMonth,
+        priority: 'low',
+        actionType: 'task',
+        dependency: 'step-3',
+        status: 'pending',
+      },
+    ];
+  }
+
   return {
     goal: cleanGoal,
     description: `Structured action roadmap for: ${cleanGoal}`,
     createdAt: new Date().toISOString(),
     status: 'draft',
-    steps: [
-      {
-        title: `Research prerequisites for ${cleanGoal}`,
-        description: `Identify essential requirements, costs, and preliminary steps for ${cleanGoal.toLowerCase()}.`,
-        dueDate: nextWeek,
-        priority: 'high',
-        dependency: null,
-        status: 'pending',
-      },
-      {
-        title: `Prepare documentation & resources`,
-        description: `Gather required forms, applications, financing, or items needed for ${cleanGoal.toLowerCase()}.`,
-        dueDate: nextWeek,
-        priority: 'high',
-        dependency: `Research prerequisites for ${cleanGoal}`,
-        status: 'pending',
-      },
-      {
-        title: `Schedule & execute primary action`,
-        description: `Book appointments, complete test/inspection/purchase, or finalize main milestone.`,
-        dueDate: nextMonth,
-        priority: 'medium',
-        dependency: `Prepare documentation & resources`,
-        status: 'pending',
-      },
-      {
-        title: `Verify & finalize completion`,
-        description: `Confirm official registration, records, or follow-up details for ${cleanGoal.toLowerCase()}.`,
-        dueDate: nextMonth,
-        priority: 'low',
-        dependency: `Schedule & execute primary action`,
-        status: 'pending',
-      },
-    ],
+    steps,
   };
 }
 
 export function classifyStepActionType(title: string, description: string): PlanStepActionType {
   const text = `${title} ${description}`.toLowerCase();
 
-  // Event keywords: book, reserve, flight, stay, hotel, accommodation, appointment, meeting, visit, interview
   if (/(book|reserve|flight|stay|hotel|accommodation|appointment|meeting|visit|interview)/i.test(text)) {
     return 'event';
   }
 
-  // Reminder keywords: set reminder, alert, notify, ping, heads up, reminder
   if (/(set reminder|alert|notify|ping|reminder for|travel reminder)/i.test(text)) {
     return 'reminder';
   }
 
-  // Note keywords: packing list, documents, passwords, wifi, details to save, info, reference note, notes
   if (/(packing list|documents|passwords|wifi|details|info to save|reference note|notes)/i.test(text)) {
     return 'note';
   }
 
-  // Default: task
   return 'task';
 }
 
@@ -225,119 +321,158 @@ export async function executeGoalPlan(
   const counts = { tasks: 0, events: 0, reminders: 0, notes: 0 };
   const now = new Date();
 
-  for (let i = 0; i < plan.steps.length; i++) {
-    const step = plan.steps[i];
+  const processStep = async (step: PlanStep, i: number): Promise<void> => {
+    if (step.status === 'completed') {
+      return;
+    }
+
     const actionType = step.actionType || classifyStepActionType(step.title, step.description);
 
-    switch (actionType) {
-      case 'event': {
-        const startAtDate = step.dueDate ? new Date(step.dueDate) : new Date(now.getTime() + (i + 1) * 24 * 60 * 60 * 1000);
-        const endAtDate = new Date(startAtDate.getTime() + 60 * 60 * 1000);
+    try {
+      switch (actionType) {
+        case 'event': {
+          const startAtDate = step.dueDate ? new Date(step.dueDate) : new Date(now.getTime() + (i + 1) * 24 * 60 * 60 * 1000);
+          const endAtDate = new Date(startAtDate.getTime() + 60 * 60 * 1000);
 
-        const event = await createEvent(
-          userId,
-          {
+          const event = await createEvent(
+            userId,
+            {
+              title: step.title,
+              description: step.description,
+              start_at: startAtDate.toISOString(),
+              end_at: endAtDate.toISOString(),
+            },
+            googleAccessToken
+          );
+
+          let reminderEntity = null;
+          if (step.priority === 'high' || step.priority === 'medium') {
+            reminderEntity = await createReminder(userId, {
+              event_id: event.id,
+              remind_at: startAtDate.toISOString(),
+              status: 'pending',
+            });
+          }
+
+          step.status = 'completed';
+          counts.events++;
+          executedSteps.push({
+            stepTitle: step.title,
+            actionType: 'event',
+            entityId: event.id,
+            reminderId: reminderEntity?.id,
+            summary: `Calendar Event "${event.title}" scheduled for ${startAtDate.toLocaleDateString()}`,
+          });
+          break;
+        }
+
+        case 'reminder': {
+          const remindAtDate = step.dueDate ? new Date(step.dueDate) : new Date(now.getTime() + (i + 1) * 24 * 60 * 60 * 1000);
+          const task = await createTask(userId, {
             title: step.title,
             description: step.description,
-            start_at: startAtDate.toISOString(),
-            end_at: endAtDate.toISOString(),
-          },
-          googleAccessToken
-        );
-
-        let reminderEntity = null;
-        if (step.priority === 'high' || step.priority === 'medium') {
-          reminderEntity = await createReminder(userId, {
-            event_id: event.id,
-            remind_at: startAtDate.toISOString(),
-            status: 'pending',
+            due_at: remindAtDate.toISOString(),
+            completed: false,
           });
-        }
 
-        counts.events++;
-        executedSteps.push({
-          stepTitle: step.title,
-          actionType: 'event',
-          entityId: event.id,
-          reminderId: reminderEntity?.id,
-          summary: `Calendar Event "${event.title}" scheduled for ${startAtDate.toLocaleDateString()}`,
-        });
-        break;
-      }
-
-      case 'reminder': {
-        const remindAtDate = step.dueDate ? new Date(step.dueDate) : new Date(now.getTime() + (i + 1) * 24 * 60 * 60 * 1000);
-        const task = await createTask(userId, {
-          title: step.title,
-          description: step.description,
-          due_at: remindAtDate.toISOString(),
-          completed: false,
-        });
-
-        const reminder = await createReminder(userId, {
-          task_id: task.id,
-          remind_at: remindAtDate.toISOString(),
-          status: 'pending',
-        });
-
-        counts.reminders++;
-        executedSteps.push({
-          stepTitle: step.title,
-          actionType: 'reminder',
-          entityId: task.id,
-          reminderId: reminder.id,
-          summary: `Reminder set for ${remindAtDate.toLocaleString()}`,
-        });
-        break;
-      }
-
-      case 'note': {
-        const note = await createNote(userId, {
-          title: step.title,
-          content: `${step.title}\n\n${step.description}`,
-        });
-
-        counts.notes++;
-        executedSteps.push({
-          stepTitle: step.title,
-          actionType: 'note',
-          entityId: note.id,
-          summary: `Note "${note.title}" saved`,
-        });
-        break;
-      }
-
-      case 'task':
-      default: {
-        const dueAtDate = step.dueDate ? new Date(step.dueDate) : new Date(now.getTime() + (i + 1) * 24 * 60 * 60 * 1000);
-        const task = await createTask(userId, {
-          title: step.title,
-          description: step.description,
-          due_at: dueAtDate.toISOString(),
-          completed: false,
-        });
-
-        let reminderEntity = null;
-        if (step.priority === 'high') {
-          reminderEntity = await createReminder(userId, {
+          const reminder = await createReminder(userId, {
             task_id: task.id,
-            remind_at: dueAtDate.toISOString(),
+            remind_at: remindAtDate.toISOString(),
             status: 'pending',
           });
+
+          step.status = 'completed';
+          counts.reminders++;
+          executedSteps.push({
+            stepTitle: step.title,
+            actionType: 'reminder',
+            entityId: task.id,
+            reminderId: reminder.id,
+            summary: `Reminder set for ${remindAtDate.toLocaleString()}`,
+          });
+          break;
         }
 
-        counts.tasks++;
-        executedSteps.push({
-          stepTitle: step.title,
-          actionType: 'task',
-          entityId: task.id,
-          reminderId: reminderEntity?.id,
-          summary: `Task "${task.title}" created (Due: ${dueAtDate.toLocaleDateString()})`,
-        });
-        break;
+        case 'note': {
+          const note = await createNote(userId, {
+            title: step.title,
+            content: `${step.title}\n\n${step.description}`,
+          });
+
+          step.status = 'completed';
+          counts.notes++;
+          executedSteps.push({
+            stepTitle: step.title,
+            actionType: 'note',
+            entityId: note.id,
+            summary: `Note "${note.title}" saved`,
+          });
+          break;
+        }
+
+        case 'task':
+        default: {
+          const dueAtDate = step.dueDate ? new Date(step.dueDate) : new Date(now.getTime() + (i + 1) * 24 * 60 * 60 * 1000);
+          const task = await createTask(userId, {
+            title: step.title,
+            description: step.description,
+            due_at: dueAtDate.toISOString(),
+            completed: false,
+          });
+
+          let reminderEntity = null;
+          if (step.priority === 'high') {
+            reminderEntity = await createReminder(userId, {
+              task_id: task.id,
+              remind_at: dueAtDate.toISOString(),
+              status: 'pending',
+            });
+          }
+
+          step.status = 'completed';
+          counts.tasks++;
+          executedSteps.push({
+            stepTitle: step.title,
+            actionType: 'task',
+            entityId: task.id,
+            reminderId: reminderEntity?.id,
+            summary: `Task "${task.title}" created (Due: ${dueAtDate.toLocaleDateString()})`,
+          });
+          break;
+        }
       }
+    } catch (err: unknown) {
+      step.status = 'failed';
+      const errMsg = err instanceof Error ? err.message : String(err);
+      executedSteps.push({
+        stepTitle: step.title,
+        actionType: step.actionType || 'task',
+        summary: `Failed: ${errMsg}`,
+      });
     }
+  };
+
+  const stepsToRun = plan.steps || [];
+  const independentSteps: { step: PlanStep; index: number }[] = [];
+  const dependentSteps: { step: PlanStep; index: number }[] = [];
+
+  stepsToRun.forEach((step, index) => {
+    if (!step.dependency) {
+      independentSteps.push({ step, index });
+    } else {
+      dependentSteps.push({ step, index });
+    }
+  });
+
+  if (independentSteps.length > 0) {
+    await Promise.allSettled(independentSteps.map(({ step, index }) => processStep(step, index)));
   }
+
+  for (const { step, index } of dependentSteps) {
+    await processStep(step, index);
+  }
+
+  evaluatePlanDependencies(plan);
 
   return {
     goal: plan.goal,
@@ -352,14 +487,15 @@ export function evaluatePlanDependencies(plan: GoalPlan): GoalPlan {
 
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
-    if (step.status === 'completed') continue;
+    if (step.status === 'completed' || step.status === 'failed') continue;
 
     if (step.dependency) {
       const depTarget = step.dependency.toLowerCase().trim();
       const prereq = steps.find(
         (s, idx) =>
           idx !== i &&
-          (s.title.toLowerCase().trim() === depTarget ||
+          ((s.id && s.id.toLowerCase().trim() === depTarget) ||
+            s.title.toLowerCase().trim() === depTarget ||
             s.title.toLowerCase().includes(depTarget) ||
             depTarget.includes(s.title.toLowerCase()))
       );
@@ -404,7 +540,10 @@ export function completePlanStep(plan: GoalPlan, stepTitleOrIndex: string | numb
   } else {
     const targetLower = stepTitleOrIndex.toLowerCase().trim();
     const targetStep = updatedSteps.find(
-      (s) => s.title.toLowerCase().trim() === targetLower || s.title.toLowerCase().includes(targetLower)
+      (s) =>
+        (s.id && s.id.toLowerCase().trim() === targetLower) ||
+        s.title.toLowerCase().trim() === targetLower ||
+        s.title.toLowerCase().includes(targetLower)
     );
     if (targetStep) {
       targetStep.status = 'completed';
