@@ -85,7 +85,8 @@ Always output ISO 8601 format timestamps for dates/times (e.g., "2026-09-11T15:0
   // Context item matching: prioritize matching existing items when user asks to move/reschedule/update
   if (userContext) {
     const lowerPrompt = prompt.toLowerCase();
-    const isMoveOrUpdate = /(move|reschedule|shift|postpone|change|update)/i.test(lowerPrompt);
+    const isRelocationMove = /(move to a|move to my|moving to|move into|relocate)/i.test(lowerPrompt);
+    const isMoveOrUpdate = !isRelocationMove && /(move|reschedule|shift|postpone|change|update)/i.test(lowerPrompt);
 
     if (isMoveOrUpdate) {
       const matchingEvent = (userContext.events || []).find((e) => {
@@ -664,31 +665,52 @@ async function heuristicFallbackParse(
       const allUserText = conversationHistory.filter((h) => h.role === 'user').map((h) => h.text).join(' ').toLowerCase();
       const prevTodHour = timeOfDayWordToHour(allUserText);
 
-      const hourMatch = lower.match(/(\d{1,2})(?::(\d{2}))?/);
-      let hour = hourMatch ? parseInt(hourMatch[1], 10) : (prevTodHour ?? 9);
-      let minute = hourMatch?.[2] ? parseInt(hourMatch[2], 10) : 0;
+      // Check 3 or 4 digit compact numbers e.g. "255" -> 2:55, "1430" -> 14:30
+      const compactMatch = lower.match(/\b(\d{3,4})\b/);
+      let hour: number;
+      let minute = 0;
 
+      if (compactMatch && !lower.includes(':')) {
+        const digits = compactMatch[1];
+        if (digits.length === 3) {
+          hour = parseInt(digits.slice(0, 1), 10);
+          minute = parseInt(digits.slice(1), 10);
+        } else {
+          hour = parseInt(digits.slice(0, 2), 10);
+          minute = parseInt(digits.slice(2), 10);
+        }
+      } else {
+        const hourMatch = lower.match(/(\d{1,2})(?::(\d{2}))?/);
+        hour = hourMatch ? parseInt(hourMatch[1], 10) : (prevTodHour ?? 9);
+        minute = hourMatch?.[2] ? parseInt(hourMatch[2], 10) : 0;
+      }
+
+      if (minute >= 60) minute = 0;
+      if (hour > 23) hour = hour % 24;
+
+      // AM/PM resolution: for evening events (party, dinner, concert) or ambiguous hours 1-11 without AM/PM, default to PM
+      const isEveningEvent = /(party|dinner|concert|movie|show|hangout|drink|night)/i.test(allUserText);
       if (lower.includes('pm') && hour < 12) {
         hour += 12;
       } else if (lower.includes('am') && hour === 12) {
         hour = 0;
       } else if (!lower.includes('pm') && !lower.includes('am')) {
-        // No explicit AM/PM — use context from earlier messages
-        if (prevTodHour !== null && prevTodHour < 12) {
-          // Previous context was morning → keep hour as-is (AM)
-        } else if (prevTodHour !== null && prevTodHour >= 12) {
-          // Previous context was afternoon/evening → push to PM if ambiguous
-          if (hour >= 1 && hour <= 6) hour += 12;
-        } else {
-          // No context at all: hours 1-6 are ambiguous, default to AM for early hours
-          // (people saying "4" usually mean 4 AM if no prior afternoon context)
+        if (isEveningEvent && hour >= 1 && hour <= 11) {
+          hour += 12; // e.g. 2:55 for a party -> 2:55 PM (14:55)
+        } else if (prevTodHour !== null && prevTodHour >= 12 && hour >= 1 && hour <= 11) {
+          hour += 12;
         }
       }
 
-      // Determine date: check if previous user message mentioned tomorrow
+      // Determine date: check if previous user message mentioned tomorrow or next week
       const mentionedTomorrow = allUserText.includes('tomorrow');
+      const mentionedNextWeek = allUserText.includes('next week');
       const start = new Date(now);
-      if (mentionedTomorrow) start.setDate(start.getDate() + 1);
+      if (mentionedNextWeek) {
+        start.setDate(start.getDate() + 7);
+      } else if (mentionedTomorrow) {
+        start.setDate(start.getDate() + 1);
+      }
       start.setHours(hour, minute, 0, 0);
 
       // If resolved time has already passed today and tomorrow wasn't mentioned, move to tomorrow
@@ -716,60 +738,30 @@ async function heuristicFallbackParse(
   }
 
   // Goal / Multi-step plan heuristic detection
-  const isGoalPhrase = /(prepare for|plan (for|my|a)|moving to|trip to|travel to|vacation|project to|organize my|help me prepare|prepare to|need to prepare)/i.test(lower);
-  const isSingleSimpleTask = /^(buy|call|clean|pick up|remind me to buy)\b/i.test(lower);
+  const isGoalPhrase = /(prepare for|plan for|plan my|moving to|move to|relocate|trip to|travel to|vacation|project to|organize my|help me prepare|prepare to|need to prepare|need to move|need to buy|want to buy|need to get|want to get|get my|buy a car|buy a house|buy a vehicle|buy an apartment)/i.test(lower);
+  const isMinorTask = /^(buy|pick up|clean|call|email|text|send)\s+(milk|groceries|coffee|mom|dad|laundry|friend|doctor|dentist|dish)/i.test(lower);
 
-  if (isGoalPhrase && !isSingleSimpleTask) {
-    let goalTitle = 'Personal Goal';
-    let actions: string[] = [];
+  if (isGoalPhrase && !isMinorTask) {
+    let cleanGoal = prompt
+      .replace(/^i\s+(need\s+to|want\s+to|should|would\s+like\s+to)\s+/i, '')
+      .replace(/^(prepare\s+for|plan\s+for|organize)\s+/i, '')
+      .trim();
 
-    const destMatch = prompt.match(/(?:trip|travel|visit|go|going|fly|flying)\s+(?:to|for|in)?\s*([A-Za-z\s]+?)(?:\s+next|\s+this|\s+in|\.|$)/i);
-    let destination = '';
-    if (destMatch && destMatch[1]) {
-      const rawDest = destMatch[1].trim().replace(/^(my|a|the)\s+/i, '');
-      if (rawDest.length > 1 && !['trip', 'travel', 'month', 'week', 'year', 'vacation'].includes(rawDest.toLowerCase())) {
-        destination = rawDest.charAt(0).toUpperCase() + rawDest.slice(1);
-      }
-    }
-
-    if (lower.includes('trip') || lower.includes('travel') || lower.includes('vacation') || destination) {
-      const isExplicitInternational = /(nairobi|kenya|london|paris|france|new york|usa|america|dubai|uae|tokyo|japan|rome|italy|uganda|tanzania|egypt|cairo|international|overseas|foreign|visa|passport)/i.test(prompt) || (destination && /(nairobi|kenya|london|paris|france|new york|usa|america|dubai|uae|tokyo|japan|rome|italy|uganda|tanzania|egypt|cairo|international|overseas|foreign)/i.test(destination));
-      const isDomestic = !isExplicitInternational;
-
-      goalTitle = destination ? `Prepare for ${destination} trip` : 'Prepare for travel trip';
-      actions = [
-        isDomestic ? 'Arrange transportation & ID' : 'Check passport',
-        'Book accommodation',
-        'Prepare packing list',
-        'Set travel reminder',
-      ];
-    } else if (lower.includes('apartment') || lower.includes('mov')) {
-      goalTitle = 'Move to new apartment';
-      actions = [
-        'Contact landlord',
-        'Arrange transportation',
-        'Pack belongings',
-        'Transfer internet',
-        'Change address',
-      ];
-    } else {
-      const match = prompt.match(/(?:prepare for|plan|organize)\s+(?:my\s+)?(.+)/i);
-      goalTitle = match ? match[1].charAt(0).toUpperCase() + match[1].slice(1) : prompt;
-      actions = [
-        `Research requirements for ${goalTitle}`,
-        `Create task breakdown for ${goalTitle}`,
-        `Schedule deadlines on calendar`,
-        `Set key reminders`,
-      ];
-    }
+    if (!cleanGoal || cleanGoal.length < 3) cleanGoal = prompt;
+    cleanGoal = cleanGoal.charAt(0).toUpperCase() + cleanGoal.slice(1);
 
     return {
       intent: 'create_plan',
       confidence: 0.95,
-      goal: goalTitle,
-      title: goalTitle,
-      possibleActions: actions,
-      reasoning: 'Parsed multi-step goal intent from fallback heuristic',
+      goal: cleanGoal,
+      title: cleanGoal,
+      possibleActions: [
+        `Research requirements for ${cleanGoal}`,
+        `Prepare documentation & resources`,
+        `Execute main milestone`,
+        `Verify & finalize completion`,
+      ],
+      reasoning: 'Parsed multi-step goal intent dynamically',
     };
   }
 

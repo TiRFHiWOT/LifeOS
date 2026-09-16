@@ -139,169 +139,55 @@ function sanitizeGoalPlan(plan: GoalPlan, rawPrompt: string, now: Date): GoalPla
 }
 
 export function generateFallbackGoalPlan(prompt: string, now: Date): GoalPlan {
-  const lower = prompt.toLowerCase();
   const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const nextMonth = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  // Dynamically extract destination from user prompt (e.g. "Hawassa", "Nairobi", "Paris")
-  const destMatch = prompt.match(/(?:trip|travel|visit|go|going|fly|flying)\s+(?:to|for|in)?\s*([A-Za-z\s]+?)(?:\s+next|\s+this|\s+in|\.|$)/i);
-  let destination = '';
-  if (destMatch && destMatch[1]) {
-    const rawDest = destMatch[1].trim().replace(/^(my|a|the)\s+/i, '');
-    if (rawDest.length > 1 && !['trip', 'travel', 'month', 'week', 'year', 'vacation'].includes(rawDest.toLowerCase())) {
-      destination = rawDest.charAt(0).toUpperCase() + rawDest.slice(1);
-    }
+  let cleanGoal = prompt
+    .replace(/^i\s+(need\s+to|want\s+to|should|would\s+like\s+to)\s+/i, '')
+    .replace(/^(prepare\s+for|plan\s+for|organize)\s+/i, '')
+    .trim();
+
+  if (!cleanGoal || cleanGoal.length < 3) {
+    cleanGoal = prompt;
   }
-
-  if (lower.includes('trip') || lower.includes('travel') || lower.includes('vacation') || lower.includes('flight') || destination) {
-    const isExplicitInternational = /(nairobi|kenya|london|paris|france|new york|usa|america|dubai|uae|tokyo|japan|rome|italy|uganda|tanzania|egypt|cairo|international|overseas|foreign|visa|passport)/i.test(prompt) || (destination && /(nairobi|kenya|london|paris|france|new york|usa|america|dubai|uae|tokyo|japan|rome|italy|uganda|tanzania|egypt|cairo|international|overseas|foreign)/i.test(destination));
-    const isDomestic = !isExplicitInternational;
-
-    const goalTitle = destination ? `Prepare for ${destination} trip` : 'Prepare for travel trip';
-    const goalDesc = destination
-      ? `Comprehensive travel preparation roadmap for ${destination} trip.`
-      : 'Comprehensive travel preparation roadmap for your upcoming trip.';
-    const stayDesc = destination
-      ? `Reserve hotel or stay in ${destination} for the duration of the visit.`
-      : 'Reserve hotel or stay for the duration of the visit.';
-
-    const step1Title = isDomestic ? 'Arrange transportation & ID' : 'Check passport';
-    const step1Desc = isDomestic
-      ? `Verify valid government ID card and book travel/bus/flight tickets for ${destination || 'your trip'}.`
-      : 'Verify passport validity has at least 6 months remaining before travel date.';
-
-    return {
-      goal: goalTitle,
-      description: goalDesc,
-      createdAt: new Date().toISOString(),
-      status: 'draft',
-      steps: [
-        {
-          title: step1Title,
-          description: step1Desc,
-          dueDate: nextWeek,
-          priority: 'high',
-          dependency: null,
-          status: 'pending',
-        },
-        {
-          title: 'Book accommodation',
-          description: stayDesc,
-          dueDate: nextWeek,
-          priority: 'high',
-          dependency: step1Title,
-          status: 'pending',
-        },
-        {
-          title: 'Prepare packing list',
-          description: 'Assemble clothing, electronics, travel adapters, and personal essentials.',
-          dueDate: nextMonth,
-          priority: 'medium',
-          dependency: 'Book accommodation',
-          status: 'pending',
-        },
-        {
-          title: 'Set travel reminder',
-          description: 'Schedule alert reminders for ticket check-in and document verification.',
-          dueDate: nextMonth,
-          priority: 'low',
-          dependency: 'Prepare packing list',
-          status: 'pending',
-        },
-      ],
-    };
-  }
-
-  if (lower.includes('apartment') || lower.includes('mov')) {
-    return {
-      goal: 'Move to new apartment',
-      description: 'Structured relocation action plan for moving to a new home.',
-      createdAt: new Date().toISOString(),
-      status: 'draft',
-      steps: [
-        {
-          title: 'Contact landlord',
-          description: 'Confirm notice period and finalize lease terms with landlord.',
-          dueDate: nextWeek,
-          priority: 'high',
-          dependency: null,
-          status: 'pending',
-        },
-        {
-          title: 'Arrange transportation',
-          description: 'Book moving company or rental truck for moving day.',
-          dueDate: nextWeek,
-          priority: 'high',
-          dependency: 'Contact landlord',
-          status: 'pending',
-        },
-        {
-          title: 'Pack belongings',
-          description: 'Box household items, label fragile goods, and organize room items.',
-          dueDate: nextMonth,
-          priority: 'medium',
-          dependency: 'Arrange transportation',
-          status: 'pending',
-        },
-        {
-          title: 'Transfer internet',
-          description: 'Notify ISP to relocate broadband connection to new address.',
-          dueDate: nextMonth,
-          priority: 'medium',
-          dependency: 'Pack belongings',
-          status: 'pending',
-        },
-        {
-          title: 'Change address',
-          description: 'Update official billing address with banks, postal service, and subscriptions.',
-          dueDate: nextMonth,
-          priority: 'low',
-          dependency: 'Transfer internet',
-          status: 'pending',
-        },
-      ],
-    };
-  }
-
-  const match = prompt.match(/(?:prepare for|plan|organize)\s+(?:my\s+)?(.+)/i);
-  const goalTitle = match ? match[1].charAt(0).toUpperCase() + match[1].slice(1) : prompt;
+  cleanGoal = cleanGoal.charAt(0).toUpperCase() + cleanGoal.slice(1);
 
   return {
-    goal: goalTitle,
-    description: `Action plan generated for: ${goalTitle}`,
+    goal: cleanGoal,
+    description: `Structured action roadmap for: ${cleanGoal}`,
     createdAt: new Date().toISOString(),
     status: 'draft',
     steps: [
       {
-        title: `Research requirements for ${goalTitle}`,
-        description: 'Gather essential documents, costs, and prerequisite information.',
+        title: `Research prerequisites for ${cleanGoal}`,
+        description: `Identify essential requirements, costs, and preliminary steps for ${cleanGoal.toLowerCase()}.`,
         dueDate: nextWeek,
         priority: 'high',
         dependency: null,
         status: 'pending',
       },
       {
-        title: `Create task list for ${goalTitle}`,
-        description: 'Detail key sub-tasks and assign target dates for completion.',
+        title: `Prepare documentation & resources`,
+        description: `Gather required forms, applications, financing, or items needed for ${cleanGoal.toLowerCase()}.`,
         dueDate: nextWeek,
-        priority: 'medium',
-        dependency: `Research requirements for ${goalTitle}`,
+        priority: 'high',
+        dependency: `Research prerequisites for ${cleanGoal}`,
         status: 'pending',
       },
       {
-        title: `Schedule deadlines on calendar`,
-        description: 'Block out dedicated time slots on calendar for key milestones.',
+        title: `Schedule & execute primary action`,
+        description: `Book appointments, complete test/inspection/purchase, or finalize main milestone.`,
         dueDate: nextMonth,
         priority: 'medium',
-        dependency: `Create task list for ${goalTitle}`,
+        dependency: `Prepare documentation & resources`,
         status: 'pending',
       },
       {
-        title: 'Set key reminders',
-        description: 'Configure automated notifications for approaching deadlines.',
+        title: `Verify & finalize completion`,
+        description: `Confirm official registration, records, or follow-up details for ${cleanGoal.toLowerCase()}.`,
         dueDate: nextMonth,
         priority: 'low',
-        dependency: `Schedule deadlines on calendar`,
+        dependency: `Schedule & execute primary action`,
         status: 'pending',
       },
     ],
