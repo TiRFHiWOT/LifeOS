@@ -761,49 +761,15 @@ async function heuristicFallbackParse(
     };
   }
 
-  // Flexible notification & reminder regex pattern
-  const isNotificationIntent = /(notify|remind|ping|alert|let me know|warn|tell me|wake me|heads up)/i.test(lower);
-  if (isNotificationIntent) {
-    let remindDate = parseTimeFromText(prompt, now);
-    if (!remindDate) {
-      // Default to 1 hour from now if no time or relative duration specified
-      remindDate = new Date(now.getTime() + 60 * 60 * 1000);
-    }
-
-    const title = cleanReminderTitle(prompt);
-
-    return {
-      intent: 'create_reminder',
-      confidence: 0.95,
-      title,
-      remindAt: remindDate.toISOString(),
-      reasoning: 'Parsed notification/reminder intent',
-    };
-  }
-
-  // Note detection
-  if (lower.includes('password') || lower.includes('wifi') || lower.includes('note:') || lower.includes('remember that')) {
-    let cleanTitle = 'Saved Note';
-    if (lower.includes('wifi')) cleanTitle = 'WiFi Info';
-    else if (lower.includes('password')) cleanTitle = 'Password Note';
-    else cleanTitle = prompt.slice(0, 30);
-
-    return {
-      intent: 'create_note',
-      confidence: 0.9,
-      title: cleanTitle,
-      content: prompt,
-      reasoning: 'Fallback heuristic: detected note / information keywords',
-    };
-  }
-
-  // Event / Appointment / Date / Game / Class detection
-  const eventWordMatch = lower.match(/\b(appointment|dentist|doctor|meeting|flight|date|interview|test|party|dinner|lunch|concert|event|game|class|match|show|movie|hangout)\b/i);
+  // Event / Appointment / Date / Game / Class detection (prioritized over simple reminder regex)
+  const eventWordMatch = lower.match(/\b(dentist appointment|doctor appointment|appointment|dentist|doctor|meeting|flight|date|interview|test|party|dinner|lunch|concert|event|game|class|match|show|movie|hangout)\b/i);
   const isEventWord = !!eventWordMatch;
   if (isEventWord) {
-    // Build a clean, short title from the matched event noun
-    const eventNoun = eventWordMatch![1];
-    const nounTitle = eventNoun.charAt(0).toUpperCase() + eventNoun.slice(1);
+    // Build a clean, short title from the matched event phrase/noun
+    const rawMatched = eventWordMatch![1];
+    let nounTitle = rawMatched.charAt(0).toUpperCase() + rawMatched.slice(1);
+    if (lower.includes('dentist appointment')) nounTitle = 'Dentist appointment';
+    else if (lower.includes('doctor appointment')) nounTitle = 'Doctor appointment';
 
     // Check if prompt specifies a general time of day (morning, afternoon, evening) WITHOUT an explicit numeric hour
     const hasNumericTime = /\b\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b/i.test(lower) || /\bat\s+\d{1,2}\b/i.test(lower);
@@ -852,7 +818,7 @@ async function heuristicFallbackParse(
         confidence: 0.95,
         title: nounTitle,
         missingFields: ['startTime'],
-        question: `What time is your ${eventNoun}?`,
+        question: `What time is your ${rawMatched}?`,
         reasoning: 'Detected event/date/appointment without explicit time of day',
       };
     }
@@ -896,7 +862,20 @@ async function heuristicFallbackParse(
 
     const end = new Date(start.getTime() + 60 * 60 * 1000);
     const hasReminder = lower.includes('remind') || lower.includes('alert') || lower.includes('let me know');
-    const reminderMinutesBefore = hasReminder ? 60 : undefined;
+    let reminderMinutesBefore: number | undefined = undefined;
+    if (hasReminder) {
+      if (lower.includes('one hour before') || lower.includes('1 hour before') || lower.includes('an hour before')) {
+        reminderMinutesBefore = 60;
+      } else if (lower.includes('30 min')) {
+        reminderMinutesBefore = 30;
+      } else if (lower.includes('15 min')) {
+        reminderMinutesBefore = 15;
+      } else if (lower.includes('2 hour')) {
+        reminderMinutesBefore = 120;
+      } else {
+        reminderMinutesBefore = 60;
+      }
+    }
 
     return {
       intent: 'create_event',
@@ -906,6 +885,43 @@ async function heuristicFallbackParse(
       endAt: end.toISOString(),
       reminderMinutesBefore,
       reasoning: 'Parsed event start time from prompt context',
+    };
+  }
+
+  // Note detection (passwords, wifi, notes, stored info)
+  if (lower.includes('password') || lower.includes('wifi') || lower.includes('note:') || lower.includes('remember that') || lower.includes('secret') || lower.includes('code')) {
+    let cleanTitle = 'Saved Note';
+    if (lower.includes('wifi') && lower.includes('password')) cleanTitle = 'WiFi Password';
+    else if (lower.includes('wifi')) cleanTitle = 'WiFi Info';
+    else if (lower.includes('password')) cleanTitle = 'Password Note';
+    else cleanTitle = prompt.slice(0, 30);
+
+    return {
+      intent: 'create_note',
+      confidence: 0.9,
+      title: cleanTitle,
+      content: prompt,
+      reasoning: 'Fallback heuristic: detected note / information keywords',
+    };
+  }
+
+  // Flexible notification & reminder regex pattern
+  const isNotificationIntent = /(notify|remind|ping|alert|let me know|warn|tell me|wake me|heads up)/i.test(lower);
+  if (isNotificationIntent) {
+    let remindDate = parseTimeFromText(prompt, now);
+    if (!remindDate) {
+      // Default to 1 hour from now if no time or relative duration specified
+      remindDate = new Date(now.getTime() + 60 * 60 * 1000);
+    }
+
+    const title = cleanReminderTitle(prompt);
+
+    return {
+      intent: 'create_reminder',
+      confidence: 0.95,
+      title,
+      remindAt: remindDate.toISOString(),
+      reasoning: 'Parsed notification/reminder intent',
     };
   }
 
