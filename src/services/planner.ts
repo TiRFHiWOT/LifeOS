@@ -25,22 +25,29 @@ export async function generateGoalPlan(
     return generateFallbackGoalPlan(goalPrompt, now);
   }
 
+  const userLocation = 'Addis Ababa, Ethiopia';
+
   const systemInstruction = `
 You are the AI Planning Engine for LifeOS. Your task is to take a user's goal statement and convert it into a structured, step-by-step action plan.
 
-Current reference time context:
+Current reference context:
 - ISO UTC Timestamp: ${currentDateStr}
+- User Home Location: ${userLocation}
 
-Rules:
-1. Analyze the goal and generate 3 to 6 logical, ordered action steps.
-2. Each step MUST include:
-   - title: concise actionable title (e.g. "Contact landlord")
-   - description: 1-2 sentence explanation of what needs to be done.
-   - dueDate: ISO 8601 date string relative to the reference time context, or null if flexible.
-   - priority: 'high', 'medium', or 'low'.
-   - dependency: title of an earlier step that must be completed first, or null if independent.
-   - status: 'pending'.
-3. Set the overall goal title clearly.
+Geographical & Travel Intelligence Rules:
+1. Use real-world geography relative to the user's location (${userLocation}).
+2. If the user mentions traveling within their current city (${userLocation}), generate a local city activity plan (no passport or travel tickets required).
+3. If the user mentions traveling to another domestic city in the same country (e.g., Hawassa, Bahir Dar, Dire Dawa), generate a domestic travel plan (local ID & transport, NO passport required).
+4. If the user mentions traveling to another country (e.g., Nairobi, Paris, London, Dubai), generate an international travel plan (passport & visa check required).
+5. For all other goals, generate 3 to 6 logical, ordered action steps tailored to the user's request.
+
+Rules for Steps:
+- title: concise actionable title (e.g. "Contact landlord")
+- description: 1-2 sentence explanation of what needs to be done.
+- dueDate: ISO 8601 date string relative to the reference time context, or null if flexible.
+- priority: 'high', 'medium', or 'low'.
+- dependency: title of an earlier step that must be completed first, or null if independent.
+- status: 'pending'.
 `;
 
   try {
@@ -136,16 +143,42 @@ export function generateFallbackGoalPlan(prompt: string, now: Date): GoalPlan {
   const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const nextMonth = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  if (lower.includes('nairobi') || lower.includes('trip') || lower.includes('travel')) {
+  // Dynamically extract destination from user prompt (e.g. "Hawassa", "Nairobi", "Paris")
+  const destMatch = prompt.match(/(?:trip|travel|visit|go|going|fly|flying)\s+(?:to|for|in)?\s*([A-Za-z\s]+?)(?:\s+next|\s+this|\s+in|\.|$)/i);
+  let destination = '';
+  if (destMatch && destMatch[1]) {
+    const rawDest = destMatch[1].trim().replace(/^(my|a|the)\s+/i, '');
+    if (rawDest.length > 1 && !['trip', 'travel', 'month', 'week', 'year', 'vacation'].includes(rawDest.toLowerCase())) {
+      destination = rawDest.charAt(0).toUpperCase() + rawDest.slice(1);
+    }
+  }
+
+  if (lower.includes('trip') || lower.includes('travel') || lower.includes('vacation') || lower.includes('flight') || destination) {
+    const isExplicitInternational = /(nairobi|kenya|london|paris|france|new york|usa|america|dubai|uae|tokyo|japan|rome|italy|uganda|tanzania|egypt|cairo|international|overseas|foreign|visa|passport)/i.test(prompt) || (destination && /(nairobi|kenya|london|paris|france|new york|usa|america|dubai|uae|tokyo|japan|rome|italy|uganda|tanzania|egypt|cairo|international|overseas|foreign)/i.test(destination));
+    const isDomestic = !isExplicitInternational;
+
+    const goalTitle = destination ? `Prepare for ${destination} trip` : 'Prepare for travel trip';
+    const goalDesc = destination
+      ? `Comprehensive travel preparation roadmap for ${destination} trip.`
+      : 'Comprehensive travel preparation roadmap for your upcoming trip.';
+    const stayDesc = destination
+      ? `Reserve hotel or stay in ${destination} for the duration of the visit.`
+      : 'Reserve hotel or stay for the duration of the visit.';
+
+    const step1Title = isDomestic ? 'Arrange transportation & ID' : 'Check passport';
+    const step1Desc = isDomestic
+      ? `Verify valid government ID card and book travel/bus/flight tickets for ${destination || 'your trip'}.`
+      : 'Verify passport validity has at least 6 months remaining before travel date.';
+
     return {
-      goal: 'Prepare for Nairobi trip',
-      description: 'Comprehensive travel preparation roadmap for Nairobi trip.',
+      goal: goalTitle,
+      description: goalDesc,
       createdAt: new Date().toISOString(),
       status: 'draft',
       steps: [
         {
-          title: 'Check passport',
-          description: 'Verify passport validity has at least 6 months remaining before travel date.',
+          title: step1Title,
+          description: step1Desc,
           dueDate: nextWeek,
           priority: 'high',
           dependency: null,
@@ -153,10 +186,10 @@ export function generateFallbackGoalPlan(prompt: string, now: Date): GoalPlan {
         },
         {
           title: 'Book accommodation',
-          description: 'Reserve hotel or stay in Nairobi for the duration of the visit.',
+          description: stayDesc,
           dueDate: nextWeek,
           priority: 'high',
-          dependency: 'Check passport',
+          dependency: step1Title,
           status: 'pending',
         },
         {
@@ -169,7 +202,7 @@ export function generateFallbackGoalPlan(prompt: string, now: Date): GoalPlan {
         },
         {
           title: 'Set travel reminder',
-          description: 'Schedule alert reminders for flight check-in and document verification.',
+          description: 'Schedule alert reminders for ticket check-in and document verification.',
           dueDate: nextMonth,
           priority: 'low',
           dependency: 'Prepare packing list',

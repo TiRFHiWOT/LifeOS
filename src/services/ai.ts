@@ -723,10 +723,22 @@ async function heuristicFallbackParse(
     let goalTitle = 'Personal Goal';
     let actions: string[] = [];
 
-    if (lower.includes('nairobi') || lower.includes('trip') || lower.includes('travel')) {
-      goalTitle = 'Prepare for Nairobi trip';
+    const destMatch = prompt.match(/(?:trip|travel|visit|go|going|fly|flying)\s+(?:to|for|in)?\s*([A-Za-z\s]+?)(?:\s+next|\s+this|\s+in|\.|$)/i);
+    let destination = '';
+    if (destMatch && destMatch[1]) {
+      const rawDest = destMatch[1].trim().replace(/^(my|a|the)\s+/i, '');
+      if (rawDest.length > 1 && !['trip', 'travel', 'month', 'week', 'year', 'vacation'].includes(rawDest.toLowerCase())) {
+        destination = rawDest.charAt(0).toUpperCase() + rawDest.slice(1);
+      }
+    }
+
+    if (lower.includes('trip') || lower.includes('travel') || lower.includes('vacation') || destination) {
+      const isExplicitInternational = /(nairobi|kenya|london|paris|france|new york|usa|america|dubai|uae|tokyo|japan|rome|italy|uganda|tanzania|egypt|cairo|international|overseas|foreign|visa|passport)/i.test(prompt) || (destination && /(nairobi|kenya|london|paris|france|new york|usa|america|dubai|uae|tokyo|japan|rome|italy|uganda|tanzania|egypt|cairo|international|overseas|foreign)/i.test(destination));
+      const isDomestic = !isExplicitInternational;
+
+      goalTitle = destination ? `Prepare for ${destination} trip` : 'Prepare for travel trip';
       actions = [
-        'Check passport',
+        isDomestic ? 'Arrange transportation & ID' : 'Check passport',
         'Book accommodation',
         'Prepare packing list',
         'Set travel reminder',
