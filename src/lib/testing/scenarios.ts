@@ -585,5 +585,35 @@ export async function runDemoScenarios(): Promise<ScenarioTestResult[]> {
     });
   }
 
+  try {
+    const res23 = await orchestrateAIAction(
+      'test-user-id',
+      {
+        intent: 'create_plan',
+        confidence: 0.95,
+        goal: 'My trip to Addis Ababa next month',
+      },
+      undefined,
+      'Addis Ababa, Ethiopia'
+    );
+    const pass23 = res23.success && res23.plan && res23.plan.steps.length > 0 && !res23.plan.steps.some((s) => s.title.toLowerCase().includes('passport'));
+    results.push({
+      scenarioName: 'Scenario 23 — Orchestrator Goal Plan Location Handling',
+      passed: !!pass23,
+      prompt: 'My trip to Addis Ababa next month',
+      intentFound: 'create_plan',
+      outputSummary: res23.plan ? `Plan created with ${res23.plan.steps.length} steps (First step: "${res23.plan.steps[0]?.title}")` : 'No plan returned',
+    });
+  } catch (err: unknown) {
+    results.push({
+      scenarioName: 'Scenario 23 — Orchestrator Goal Plan Location Handling',
+      passed: false,
+      prompt: 'My trip to Addis Ababa next month',
+      intentFound: 'error',
+      outputSummary: 'Test failed',
+      error: err instanceof Error ? err.message : 'Unknown error',
+    });
+  }
+
   return results;
 }

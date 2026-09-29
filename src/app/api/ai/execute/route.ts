@@ -48,7 +48,7 @@ export async function POST(request: Request) {
       interpretation = await interpretNaturalLanguage(prompt.trim(), referenceDateISO, conversationHistory, userContext);
     }
 
-    const actionResult = await orchestrateAIAction(user.id, interpretation, googleAccessToken);
+    const actionResult = await orchestrateAIAction(user.id, interpretation, googleAccessToken, userLocation);
 
     return NextResponse.json({
       interpretation,

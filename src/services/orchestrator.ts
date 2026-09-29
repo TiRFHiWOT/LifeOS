@@ -50,7 +50,8 @@ export interface ActionResult {
 export async function orchestrateAIAction(
   userId: string,
   interpretation: AIInterpretationResult,
-  googleAccessToken?: string
+  googleAccessToken?: string,
+  userLocation?: string
 ): Promise<ActionResult> {
   if (!userId) {
     throw new Error('User authentication context is required for action execution');
@@ -261,7 +262,7 @@ export async function orchestrateAIAction(
 
     case 'create_plan': {
       const goal = interpretation.goal || interpretation.title || 'Goal Plan';
-      const fullPlan = await generateGoalPlan(goal, { referenceDateISO: interpretation.startAt || undefined });
+      const fullPlan = await generateGoalPlan(goal, { referenceDateISO: interpretation.startAt || undefined, userLocation });
       const executedSummary = await executeGoalPlan(userId, fullPlan, googleAccessToken);
 
       const formattedSteps = executedSummary.executedSteps

@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import { Database } from '@/types/database';
 
 export async function createClient() {
-  let cookieStore: { getAll: () => Array<{ name: string; value: string }>; set: (name: string, value: string, options?: unknown) => void };
+  let cookieStore: any;
   try {
     cookieStore = await cookies();
   } catch {

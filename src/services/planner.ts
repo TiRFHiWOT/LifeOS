@@ -179,12 +179,48 @@ export function generateFallbackGoalPlan(prompt: string, now: Date, userLocation
   }
   cleanGoal = cleanGoal.charAt(0).toUpperCase() + cleanGoal.slice(1);
 
+  const userCity = (userLocation || 'Addis Ababa').split(',')[0].trim().toLowerCase();
+  const isLocalCityTravel = userCity && userCity.length >= 3 && lower.includes(userCity);
   const isIntlTravel = /(nairobi|paris|london|dubai|tokyo|international|passport|visa|foreign)/i.test(lower);
-  const isDomesticTravel = /(hawassa|bahir dar|dire dawa|gonder|mekele|domestic)/i.test(lower);
+  const isDomesticTravel = !isLocalCityTravel && /(hawassa|bahir dar|dire dawa|gonder|mekele|domestic)/i.test(lower);
 
   let steps: PlanStep[] = [];
 
-  if (isIntlTravel) {
+  if (isLocalCityTravel) {
+    const cityName = userCity.charAt(0).toUpperCase() + userCity.slice(1);
+    steps = [
+      {
+        id: 'step-1',
+        title: `Plan Local Itinerary in ${cityName}`,
+        description: `Organize schedule and local activities in ${cityName}.`,
+        dueDate: nextWeek,
+        priority: 'high',
+        actionType: 'task',
+        dependency: null,
+        status: 'pending',
+      },
+      {
+        id: 'step-2',
+        title: 'Arrange Local Transport & Bookings',
+        description: `Check local transit options and reserve venues or activities in ${cityName}.`,
+        dueDate: nextWeek,
+        priority: 'medium',
+        actionType: 'event',
+        dependency: 'step-1',
+        status: 'pending',
+      },
+      {
+        id: 'step-3',
+        title: 'Set Reminder for Local Event',
+        description: `Set reminder for scheduled local activity in ${cityName}.`,
+        dueDate: nextMonth,
+        priority: 'low',
+        actionType: 'reminder',
+        dependency: 'step-2',
+        status: 'pending',
+      },
+    ];
+  } else if (isIntlTravel) {
     steps = [
       {
         id: 'step-1',
