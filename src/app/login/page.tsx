@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { APP_NAME } from '@/lib/constants';
+import LifeOSLogo from '@/components/LifeOSLogo';
 
 type AuthMethod = 'password' | 'otp';
 
@@ -181,9 +182,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center items-center px-4 font-sans">
       <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-2xl">
         <div className="flex flex-col items-center mb-6">
-          <div className="w-12 h-12 rounded-xl bg-indigo-600 flex items-center justify-center font-bold text-white text-xl shadow-lg shadow-indigo-500/20 mb-3">
-            L
-          </div>
+          <LifeOSLogo size={48} className="w-12 h-12 mb-3" />
           <h1 className="text-2xl font-bold text-white">{APP_NAME}</h1>
           <p className="text-sm text-slate-400 mt-1">
             {otpSent

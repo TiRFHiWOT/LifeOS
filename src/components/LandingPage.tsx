@@ -2,6 +2,7 @@
 
 import { useEffect, useReducer } from 'react';
 import Link from 'next/link';
+import LifeOSLogo from '@/components/LifeOSLogo';
 import { Sparkles, Calendar, CheckSquare, FileText, Bell, ArrowRight } from 'lucide-react';
 
 const DEMO_PROMPTS = [
@@ -84,12 +85,10 @@ export default function LandingPage() {
 
       {/* Nav */}
       <nav className="flex items-center justify-between px-6 py-5 max-w-5xl mx-auto w-full">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white text-sm shadow-lg shadow-indigo-500/30">
-            L
-          </div>
-          <span className="font-semibold text-sm tracking-tight text-slate-100">LifeOS</span>
-        </div>
+        <Link href="/" className="flex items-center gap-2.5 hover:opacity-85 transition-opacity cursor-pointer group">
+          <LifeOSLogo size={32} className="w-8 h-8 group-hover:scale-105 transition-transform" />
+          <span className="font-bold text-base tracking-tight text-slate-100">LifeOS</span>
+        </Link>
         <div className="flex items-center gap-3">
           <Link
             href="/login"

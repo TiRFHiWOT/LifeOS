@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import Sidebar from '@/components/Sidebar';
 import LifeOSLogo from '@/components/LifeOSLogo';
 import ReminderAlertListener from '@/components/ReminderAlertListener';
@@ -38,16 +39,20 @@ export default function Navbar({ userEmail, isGoogleConnected }: NavbarProps) {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setIsSidebarOpen(true)}
-              className="p-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center"
+              className="p-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center cursor-pointer"
               aria-label="Open navigation menu"
             >
               <Menu className="w-5 h-5" />
             </button>
 
-            <div className="flex items-center gap-2.5">
-              <LifeOSLogo size={28} className="w-7 h-7" />
+            <Link 
+              href="/" 
+              className="flex items-center gap-2.5 hover:opacity-85 transition-opacity cursor-pointer group"
+              title="Go to Home"
+            >
+              <LifeOSLogo size={28} className="w-7 h-7 group-hover:scale-105 transition-transform" />
               <span className="font-bold text-slate-100 text-base tracking-tight">LifeOS</span>
-            </div>
+            </Link>
           </div>
 
           {/* Google Sync Indicator / Profile indicator on the Right */}

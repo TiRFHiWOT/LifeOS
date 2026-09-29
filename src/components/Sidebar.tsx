@@ -49,22 +49,26 @@ export default function Sidebar({ isOpen, onClose, userEmail, isGoogleConnected 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex">
+    <div className="fixed inset-0 z-50 flex p-3 sm:p-4 pointer-events-auto">
       {/* Backdrop */}
       <div 
-        className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm transition-opacity"
+        className="fixed inset-0 bg-slate-950/75 backdrop-blur-md transition-opacity"
         onClick={onClose}
       />
 
-      {/* Drawer Container */}
-      <div className="relative w-4/5 max-w-xs bg-slate-900 border-r border-white/10 p-6 flex flex-col justify-between h-full z-10 shadow-2xl transition-transform duration-300">
+      {/* Floating Sidebar Card */}
+      <div className="relative w-72 max-w-[calc(100vw-2rem)] bg-slate-900/95 backdrop-blur-xl border border-white/15 rounded-3xl p-6 flex flex-col justify-between h-[calc(100vh-1.5rem)] sm:h-[calc(100vh-2rem)] z-10 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.7)] shadow-indigo-950/30 transition-all duration-300">
         <div>
           {/* Header */}
           <div className="flex items-center justify-between pb-6 border-b border-white/10">
-            <div className="flex items-center gap-3">
-              <LifeOSLogo size={30} className="w-8 h-8" />
+            <Link 
+              href="/" 
+              onClick={onClose} 
+              className="flex items-center gap-3 hover:opacity-85 transition-opacity cursor-pointer group"
+            >
+              <LifeOSLogo size={30} className="w-8 h-8 group-hover:scale-105 transition-transform" />
               <span className="font-bold text-lg text-slate-100 tracking-tight">LifeOS</span>
-            </div>
+            </Link>
             <button 
               onClick={onClose}
               className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition"
