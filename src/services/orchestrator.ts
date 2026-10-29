@@ -303,18 +303,23 @@ export async function orchestrateAIAction(
         }
       }
 
+      const targetStart = interpretation.startAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      const targetEnd = interpretation.endAt || new Date(new Date(targetStart).getTime() + 60 * 60 * 1000).toISOString();
+
       if (targetId) {
-        const nextWeekStart = interpretation.startAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-        const nextWeekEnd = interpretation.endAt || new Date(new Date(nextWeekStart).getTime() + 60 * 60 * 1000).toISOString();
         try {
           updatedEntity = await updateEvent(userId, targetId, {
-            start_at: nextWeekStart,
-            end_at: nextWeekEnd,
+            start_at: targetStart,
+            end_at: targetEnd,
           });
         } catch (err) {
           console.error('Failed to update event in database:', err);
         }
       }
+
+      const formattedNewTime = interpretation.startAt
+        ? new Date(interpretation.startAt).toLocaleString([], { weekday: 'long', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+        : 'new date';
 
       return {
         success: true,
@@ -329,7 +334,7 @@ export async function orchestrateAIAction(
               endAt: updatedEntity.end_at,
             }
           : undefined,
-        message: `Event "${interpretation.title || updatedEntity?.title || 'Appointment'}" moved to next week successfully.`,
+        message: `Event "${interpretation.title || updatedEntity?.title || 'Appointment'}" moved to ${formattedNewTime} successfully.`,
       };
     }
 

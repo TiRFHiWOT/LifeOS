@@ -60,5 +60,8 @@ export interface AIInterpretationResult {
     targetItemId?: string;
     targetItemType?: 'event' | 'task' | 'note' | 'reminder';
     field?: string;
+    startAt?: string;
+    endAt?: string;
+    dueAt?: string;
   };
 }

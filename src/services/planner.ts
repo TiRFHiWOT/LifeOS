@@ -166,23 +166,79 @@ function sanitizeGoalPlan(plan: GoalPlan, rawPrompt: string, now: Date, userLoca
 
 export function generateFallbackGoalPlan(prompt: string, now: Date, userLocation?: string): GoalPlan {
   const lower = prompt.toLowerCase();
-  const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  const nextMonth = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  let cleanGoal = prompt
+  const deadlineMatch = lower.match(
+    /\b(?:by|before|until|no later than)\s+([a-z]+\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?|\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)/i
+  );
+  const deadlineStr = deadlineMatch ? deadlineMatch[1] : null;
+
+  const getDeadlineDate = (): Date => {
+    if (!deadlineStr) return new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const parsed = new Date(`${deadlineStr} ${now.getFullYear()}`);
+    if (!isNaN(parsed.getTime())) {
+      if (parsed < now) parsed.setFullYear(now.getFullYear() + 1);
+      return parsed;
+    }
+    return new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  };
+
+  const deadlineDate = getDeadlineDate();
+  const deadlineISO = deadlineDate.toISOString();
+
+  const midpointDate = new Date((now.getTime() + deadlineDate.getTime()) / 2);
+  const midpointISO = midpointDate.toISOString();
+
+  const earlyDate = new Date(now.getTime() + Math.max(3, Math.floor((deadlineDate.getTime() - now.getTime()) / 4 / 86400000)) * 86400000);
+  const earlyISO = earlyDate.toISOString();
+
+  const firstSentence = prompt.split(/[.!?]\s+/)[0].trim();
+
+  const extractedGoalNoun = firstSentence
     .replace(/^i\s+(need\s+to|want\s+to|should|would\s+like\s+to)\s+/i, '')
-    .replace(/^(prepare\s+for|plan\s+for|organize)\s+/i, '')
+    .replace(/^(prepare\s+for|plan\s+for|plan\s+my|organize\s+my|help\s+me\s+prepare\s+for|get\s+ready\s+for)\s+/i, '')
+    .replace(/\s+(next|this|on)\s+(friday|monday|tuesday|wednesday|thursday|saturday|sunday|week|month)\b.*/i, '')
+    .replace(/\s+(by|before|until)\s+\w.*/i, '')
     .trim();
 
-  if (!cleanGoal || cleanGoal.length < 3) {
-    cleanGoal = prompt;
-  }
+  const VAGUE_SINGLE_WORDS = new Set(['travel', 'prepare', 'plan', 'organize', 'do', 'make', 'get', 'go', 'work', 'start', 'finish', 'complete']);
+  let cleanGoal = extractedGoalNoun && extractedGoalNoun.length >= 3 && !VAGUE_SINGLE_WORDS.has(extractedGoalNoun.toLowerCase())
+    ? extractedGoalNoun
+    : firstSentence
+        .replace(/^i\s+(need\s+to|want\s+to|should|would\s+like\s+to)\s+/i, '')
+        .replace(/\s+(by|before|until)\s+\w.*/i, '')
+        .trim();
+  if (!cleanGoal || cleanGoal.length < 3) cleanGoal = firstSentence;
   cleanGoal = cleanGoal.charAt(0).toUpperCase() + cleanGoal.slice(1);
 
+  const enumerationPattern = /(?:(?:.*?[.!?]\s+)?(?:i\s+(?:need\s+to|want\s+to|should)\s+)(.+)|(?:first[,.]?\s+(?:i\s+(?:need\s+to|want\s+to|will|should)\s+)?)(.+?)(?:\s*[,.]?\s*(?:then|next|after\s+that)\b.+))/i;
+  const enumerationMatch = prompt.match(enumerationPattern);
+  const rawEnumeration = enumerationMatch ? (enumerationMatch[1] || enumerationMatch[2] ? prompt.replace(/^.*?(?:first[,.]?\s+(?:i\s+(?:need\s+to|want\s+to|will|should)\s+)?|i\s+(?:need\s+to|want\s+to|should)\s+)/i, '') : null) : null;
+
+  const extractEnumeratedTasks = (text: string): string[] => {
+    const cleaned = text
+      .replace(/\b(and\s+(?:also\s+)?|then\s+(?:i\s+(?:need\s+to|want\s+to|will|should)\s+)?|after\s+that[,]?\s+(?:i\s+(?:need\s+to|want\s+to|will|should)\s+)?|finally[,]?\s+(?:i\s+(?:need\s+to|want\s+to|will|should)\s+)?|next[,]?\s+(?:i\s+(?:need\s+to|want\s+to|will|should)\s+)?)/gi, ',')
+      .replace(/^(?:first[,.]?\s+(?:i\s+(?:need\s+to|want\s+to|will|should)\s+)?)/i, '')
+      .replace(/;\s*/g, ',');
+    const parts = cleaned.split(/,\s*/);
+    return parts
+      .map((p) => p.trim().replace(/^(also\s+|please\s+|then\s+|first\s+|next\s+|finally\s+)/i, '').trim())
+      .filter((p) => p.length > 3 && p.length < 80);
+  };
+
+  const explicitTasks = rawEnumeration ? extractEnumeratedTasks(rawEnumeration) : [];
+
   const userCity = (userLocation || 'Addis Ababa').split(',')[0].trim().toLowerCase();
+
+  const travelMatch = lower.match(
+    /\b(?:trip\s+to|travel\s+to|traveling\s+to|travelling\s+to|fly(?:ing)?\s+to|going\s+to|visit(?:ing)?\s+|heading\s+to|journey\s+to|prepare.+trip\s+to|plan.+trip\s+to)\s+([a-z][a-z\s]{1,30}?)(?:\s+(?:by|before|in|next|on|for|from|\.|$))/i
+  );
+  const extractedDestination = travelMatch ? travelMatch[1].trim().replace(/\s+(in|by|next|for|from)$/i, '').trim() : null;
+
+  const ETHIOPIAN_DOMESTIC = /\b(hawassa|bahir dar|dire dawa|gonder|gondar|mekele|jimma|adama|nazret|awash|lalibela|axum|harar|shashamane|arba minch|soddo|hosanna|wolaita|dessie|kombolcha)\b/i;
   const isLocalCityTravel = userCity && userCity.length >= 3 && lower.includes(userCity);
-  const isIntlTravel = /(nairobi|paris|london|dubai|tokyo|international|passport|visa|foreign)/i.test(lower);
-  const isDomesticTravel = !isLocalCityTravel && /(hawassa|bahir dar|dire dawa|gonder|mekele|domestic)/i.test(lower);
+  const isDomesticTravel = !isLocalCityTravel && ETHIOPIAN_DOMESTIC.test(lower);
+
+  const isTravelGoal = !!(extractedDestination) || /\b(trip|travel|flight|fly|passport|visa|itinerary|packing list|abroad|overseas|international|domestic)\b/i.test(lower);
 
   let steps: PlanStep[] = [];
 
@@ -193,7 +249,7 @@ export function generateFallbackGoalPlan(prompt: string, now: Date, userLocation
         id: 'step-1',
         title: `Plan Local Itinerary in ${cityName}`,
         description: `Organize schedule and local activities in ${cityName}.`,
-        dueDate: nextWeek,
+        dueDate: earlyISO,
         priority: 'high',
         actionType: 'task',
         dependency: null,
@@ -203,7 +259,7 @@ export function generateFallbackGoalPlan(prompt: string, now: Date, userLocation
         id: 'step-2',
         title: 'Arrange Local Transport & Bookings',
         description: `Check local transit options and reserve venues or activities in ${cityName}.`,
-        dueDate: nextWeek,
+        dueDate: midpointISO,
         priority: 'medium',
         actionType: 'event',
         dependency: 'step-1',
@@ -213,41 +269,8 @@ export function generateFallbackGoalPlan(prompt: string, now: Date, userLocation
         id: 'step-3',
         title: 'Set Reminder for Local Event',
         description: `Set reminder for scheduled local activity in ${cityName}.`,
-        dueDate: nextMonth,
+        dueDate: deadlineISO,
         priority: 'low',
-        actionType: 'reminder',
-        dependency: 'step-2',
-        status: 'pending',
-      },
-    ];
-  } else if (isIntlTravel) {
-    steps = [
-      {
-        id: 'step-1',
-        title: 'Check Passport & Visa Requirements',
-        description: `Verify passport validity and visa requirements for travel to destination.`,
-        dueDate: nextWeek,
-        priority: 'high',
-        actionType: 'task',
-        dependency: null,
-        status: 'pending',
-      },
-      {
-        id: 'step-2',
-        title: 'Book International Flight & Stay',
-        description: `Book flights and reserve hotel accommodation for your trip.`,
-        dueDate: nextWeek,
-        priority: 'high',
-        actionType: 'event',
-        dependency: 'step-1',
-        status: 'pending',
-      },
-      {
-        id: 'step-3',
-        title: 'Set Travel Reminder & Packing List',
-        description: `Prepare packing list and set flight reminder.`,
-        dueDate: nextMonth,
-        priority: 'medium',
         actionType: 'reminder',
         dependency: 'step-2',
         status: 'pending',
@@ -259,7 +282,7 @@ export function generateFallbackGoalPlan(prompt: string, now: Date, userLocation
         id: 'step-1',
         title: 'Organize Domestic Transport & ID',
         description: `Verify local government ID and arrange transport tickets.`,
-        dueDate: nextWeek,
+        dueDate: earlyISO,
         priority: 'high',
         actionType: 'task',
         dependency: null,
@@ -269,20 +292,69 @@ export function generateFallbackGoalPlan(prompt: string, now: Date, userLocation
         id: 'step-2',
         title: 'Book Local Lodging',
         description: `Reserve hotel or guest house at destination city.`,
-        dueDate: nextWeek,
+        dueDate: midpointISO,
         priority: 'medium',
         actionType: 'event',
         dependency: 'step-1',
         status: 'pending',
       },
+      {
+        id: 'step-3',
+        title: 'Prepare Packing List',
+        description: 'Prepare a packing list and essential items for your trip.',
+        dueDate: midpointISO,
+        priority: 'low',
+        actionType: 'note',
+        dependency: null,
+        status: 'pending',
+      },
+      {
+        id: 'step-4',
+        title: 'Set Travel Reminder',
+        description: 'Set a reminder the day before your trip departure.',
+        dueDate: deadlineISO,
+        priority: 'medium',
+        actionType: 'reminder',
+        dependency: 'step-2',
+        status: 'pending',
+      },
     ];
-  } else {
+  } else if (explicitTasks.length >= 2) {
+    const datesPool = [earlyISO, earlyISO, midpointISO, midpointISO, deadlineISO, deadlineISO];
+    steps = explicitTasks.map((taskTitle, i) => {
+      const cap = taskTitle.charAt(0).toUpperCase() + taskTitle.slice(1);
+      const prevId = i > 0 ? `step-${i}` : null;
+      return {
+        id: `step-${i + 1}`,
+        title: cap,
+        description: `Complete: ${cap.toLowerCase()}.`,
+        dueDate: datesPool[Math.min(i, datesPool.length - 1)],
+        priority: (i === 0 ? 'high' : i < 2 ? 'high' : 'medium') as PlanStepPriority,
+        actionType: classifyStepActionType(cap, '') as PlanStepActionType,
+        dependency: prevId,
+        status: 'pending' as PlanStepStatus,
+      };
+    });
+    steps.push({
+      id: `step-${steps.length + 1}`,
+      title: `Reminder: ${cleanGoal}`,
+      description: `Set a reminder for the upcoming ${cleanGoal.toLowerCase()}.`,
+      dueDate: deadlineISO,
+      priority: 'medium',
+      actionType: 'reminder',
+      dependency: `step-${steps.length}`,
+      status: 'pending',
+    });
+  } else if (isTravelGoal) {
+    const dest = extractedDestination
+      ? extractedDestination.charAt(0).toUpperCase() + extractedDestination.slice(1)
+      : 'your destination';
     steps = [
       {
         id: 'step-1',
-        title: `Research prerequisites for ${cleanGoal}`,
-        description: `Identify essential requirements, costs, and preliminary steps for ${cleanGoal.toLowerCase()}.`,
-        dueDate: nextWeek,
+        title: `Check Passport & Visa for ${dest}`,
+        description: `Verify your passport validity and check visa requirements for ${dest}. Apply early if needed.`,
+        dueDate: earlyISO,
         priority: 'high',
         actionType: 'task',
         dependency: null,
@@ -290,9 +362,135 @@ export function generateFallbackGoalPlan(prompt: string, now: Date, userLocation
       },
       {
         id: 'step-2',
-        title: `Prepare documentation & resources`,
-        description: `Gather required forms, applications, financing, or items needed for ${cleanGoal.toLowerCase()}.`,
-        dueDate: nextWeek,
+        title: `Book Flights & Accommodation to ${dest}`,
+        description: `Research and book round-trip flights and hotel or accommodation in ${dest}.`,
+        dueDate: earlyISO,
+        priority: 'high',
+        actionType: 'event',
+        dependency: 'step-1',
+        status: 'pending',
+      },
+      {
+        id: 'step-3',
+        title: 'Prepare Itinerary & Activities',
+        description: `Plan your schedule and activities for your time in ${dest}. Research must-see spots and local customs.`,
+        dueDate: midpointISO,
+        priority: 'medium',
+        actionType: 'task',
+        dependency: 'step-2',
+        status: 'pending',
+      },
+      {
+        id: 'step-4',
+        title: 'Prepare Packing List & Travel Documents',
+        description: `Create a packing list. Ensure you have travel insurance, travel adapters, and all required documents.`,
+        dueDate: midpointISO,
+        priority: 'medium',
+        actionType: 'note',
+        dependency: 'step-2',
+        status: 'pending',
+      },
+      {
+        id: 'step-5',
+        title: 'Arrange Transportation & Local Currency',
+        description: `Arrange airport pickup/drop-off and exchange or prepare local currency for ${dest}.`,
+        dueDate: midpointISO,
+        priority: 'medium',
+        actionType: 'task',
+        dependency: 'step-3',
+        status: 'pending',
+      },
+      {
+        id: 'step-6',
+        title: 'Set Pre-Departure Reminders',
+        description: `Set reminders for flight check-in, hotel confirmation, and final packing check before departure.`,
+        dueDate: deadlineISO,
+        priority: 'high',
+        actionType: 'reminder',
+        dependency: 'step-5',
+        status: 'pending',
+      },
+    ];
+  } else if (/\b(interview|job\s+interview|job\s+application|hiring|apply\s+for)\b/i.test(lower)) {
+    steps = [
+      {
+        id: 'step-1',
+        title: 'Update CV & Cover Letter',
+        description: 'Revise your CV to highlight relevant experience and write a tailored cover letter for the role.',
+        dueDate: earlyISO,
+        priority: 'high',
+        actionType: 'task',
+        dependency: null,
+        status: 'pending',
+      },
+      {
+        id: 'step-2',
+        title: 'Research the Company',
+        description: 'Study the company\'s mission, products, culture, and recent news to prepare informed answers.',
+        dueDate: earlyISO,
+        priority: 'high',
+        actionType: 'task',
+        dependency: null,
+        status: 'pending',
+      },
+      {
+        id: 'step-3',
+        title: 'Prepare Interview Answers',
+        description: 'Practice answers to common interview questions (tell me about yourself, strengths/weaknesses, situational questions).',
+        dueDate: midpointISO,
+        priority: 'high',
+        actionType: 'task',
+        dependency: 'step-2',
+        status: 'pending',
+      },
+      {
+        id: 'step-4',
+        title: 'Choose Interview Outfit',
+        description: 'Select and prepare appropriate professional attire for the interview.',
+        dueDate: midpointISO,
+        priority: 'medium',
+        actionType: 'task',
+        dependency: null,
+        status: 'pending',
+      },
+      {
+        id: 'step-5',
+        title: 'Confirm Interview Details',
+        description: 'Confirm interview time, format (in-person/video), location/link, and required documents.',
+        dueDate: midpointISO,
+        priority: 'medium',
+        actionType: 'note',
+        dependency: null,
+        status: 'pending',
+      },
+      {
+        id: 'step-6',
+        title: 'Set Pre-Interview Reminder',
+        description: 'Set a reminder the day before the interview for final preparation.',
+        dueDate: deadlineISO,
+        priority: 'high',
+        actionType: 'reminder',
+        dependency: 'step-3',
+        status: 'pending',
+      },
+    ];
+  } else if (/\b(exam|test|presentation|report|assignment|project\s+deadline|submission)\b/i.test(lower)) {
+    steps = [
+      {
+        id: 'step-1',
+        title: `Review Material for ${cleanGoal}`,
+        description: `Gather and review all required material, notes, or resources for ${cleanGoal.toLowerCase()}.`,
+        dueDate: earlyISO,
+        priority: 'high',
+        actionType: 'task',
+        dependency: null,
+        status: 'pending',
+      },
+      {
+        id: 'step-2',
+        title: 'Prepare & Practice',
+        description: `Draft, practice, or study the key components needed for ${cleanGoal.toLowerCase()}.`,
+        dueDate: midpointISO,
         priority: 'high',
         actionType: 'task',
         dependency: 'step-1',
@@ -300,19 +498,62 @@ export function generateFallbackGoalPlan(prompt: string, now: Date, userLocation
       },
       {
         id: 'step-3',
-        title: `Schedule & execute primary action`,
-        description: `Book appointments, complete test/inspection/purchase, or finalize main milestone.`,
-        dueDate: nextMonth,
+        title: 'Final Review',
+        description: `Do a final review and check for completeness before the ${cleanGoal.toLowerCase()} deadline.`,
+        dueDate: midpointISO,
         priority: 'medium',
-        actionType: 'event',
+        actionType: 'task',
         dependency: 'step-2',
         status: 'pending',
       },
       {
         id: 'step-4',
-        title: `Verify & finalize completion`,
-        description: `Confirm official registration, records, or follow-up details for ${cleanGoal.toLowerCase()}.`,
-        dueDate: nextMonth,
+        title: `Set Deadline Reminder`,
+        description: `Set a reminder the day before your ${cleanGoal.toLowerCase()} deadline.`,
+        dueDate: deadlineISO,
+        priority: 'high',
+        actionType: 'reminder',
+        dependency: 'step-3',
+        status: 'pending',
+      },
+    ];
+  } else {
+    steps = [
+      {
+        id: 'step-1',
+        title: `Plan & research ${cleanGoal}`,
+        description: `Identify essential requirements and preliminary steps for ${cleanGoal.toLowerCase()}.`,
+        dueDate: earlyISO,
+        priority: 'high',
+        actionType: 'task',
+        dependency: null,
+        status: 'pending',
+      },
+      {
+        id: 'step-2',
+        title: `Prepare & organize`,
+        description: `Gather required resources, documents, or items needed for ${cleanGoal.toLowerCase()}.`,
+        dueDate: midpointISO,
+        priority: 'high',
+        actionType: 'task',
+        dependency: 'step-1',
+        status: 'pending',
+      },
+      {
+        id: 'step-3',
+        title: `Execute & complete`,
+        description: `Carry out the primary actions needed to achieve ${cleanGoal.toLowerCase()}.`,
+        dueDate: midpointISO,
+        priority: 'medium',
+        actionType: 'task',
+        dependency: 'step-2',
+        status: 'pending',
+      },
+      {
+        id: 'step-4',
+        title: `Review & finalize`,
+        description: `Confirm completion and follow-up on any remaining details for ${cleanGoal.toLowerCase()}.`,
+        dueDate: deadlineISO,
         priority: 'low',
         actionType: 'task',
         dependency: 'step-3',

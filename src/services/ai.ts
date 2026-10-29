@@ -8,41 +8,151 @@ export function isApiKeyConfigured(): boolean {
   return !!(apiKey && apiKey !== 'your-gemini-api-key');
 }
 
-export function matchContextItems(prompt: string, userContext?: UserContextSummary): AIInterpretationResult | null {
+export function parseRescheduleTargetDateTime(
+  prompt: string,
+  originalStartISO: string,
+  originalEndISO: string,
+  now: Date
+): { startAt: string; endAt: string; targetDescription: string } {
+  const lower = prompt.toLowerCase();
+  const origStart = new Date(originalStartISO);
+  const origEnd = new Date(originalEndISO);
+  const durationMs = Math.max(origEnd.getTime() - origStart.getTime(), 30 * 60 * 1000);
+
+  let targetHour = origStart.getHours();
+  let targetMinute = origStart.getMinutes();
+
+  const timeMatch = lower.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
+  if (timeMatch && (lower.includes('at ') || lower.includes('am') || lower.includes('pm') || timeMatch[2])) {
+    let h = parseInt(timeMatch[1], 10);
+    const m = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
+    const ampm = timeMatch[3]?.toLowerCase();
+    if (ampm === 'pm' && h < 12) h += 12;
+    if (ampm === 'am' && h === 12) h = 0;
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      targetHour = h;
+      targetMinute = m;
+    }
+  }
+
+  const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  let dayIndex = -1;
+  for (let i = 0; i < DAYS.length; i++) {
+    if (new RegExp(`\\b${DAYS[i]}\\b`, 'i').test(lower)) {
+      dayIndex = i;
+      break;
+    }
+  }
+
+  let targetDate = new Date(now);
+
+  if (dayIndex !== -1) {
+    const currentDay = now.getDay();
+    let daysDiff = (dayIndex - currentDay + 7) % 7;
+    if (daysDiff === 0 || lower.includes('next')) {
+      daysDiff += 7;
+    }
+    targetDate.setDate(now.getDate() + daysDiff);
+  } else if (lower.includes('tomorrow')) {
+    targetDate.setDate(now.getDate() + 1);
+  } else if (lower.includes('today')) {
+    // Keep today's date
+  } else {
+    targetDate = new Date(origStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+    if (targetDate.getTime() < now.getTime()) {
+      targetDate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    }
+  }
+
+  targetDate.setHours(targetHour, targetMinute, 0, 0);
+  const targetEnd = new Date(targetDate.getTime() + durationMs);
+
+  const formattedDayStr = targetDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+  const formattedTimeStr = targetDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+  const isExplicitDay = dayIndex !== -1 || lower.includes('tomorrow') || lower.includes('today');
+  const targetDescription = isExplicitDay
+    ? `${formattedDayStr} at ${formattedTimeStr}`
+    : `next week (${formattedDayStr} at ${formattedTimeStr})`;
+
+  return {
+    startAt: targetDate.toISOString(),
+    endAt: targetEnd.toISOString(),
+    targetDescription,
+  };
+}
+
+export function matchContextItems(prompt: string, userContext?: UserContextSummary, referenceDateISO?: string): AIInterpretationResult | null {
   if (!userContext) return null;
   const lowerPrompt = prompt.toLowerCase();
   const isRelocationMove = /(move to a|move to my|moving to|move into|relocate)/i.test(lowerPrompt);
-  const isMoveOrUpdate = !isRelocationMove && /(move|reschedule|shift|postpone|change|update|cancel|delete)/i.test(lowerPrompt);
+  const isMoveOrUpdate = !isRelocationMove && /(move|reschedule|shift|postpone|cancel|delete)\b/i.test(lowerPrompt);
 
   if (!isMoveOrUpdate) return null;
 
+  const COMMON_VERBS = new Set([
+    'prepare', 'plan', 'research', 'check', 'book', 'make', 'create', 'arrange',
+    'schedule', 'review', 'complete', 'finalize', 'verify', 'confirm', 'organize',
+    'ensure', 'gather', 'identify', 'execute', 'handle', 'manage', 'setup',
+    'update', 'change', 'write', 'choose', 'select', 'build', 'learn', 'start',
+    'with', 'from', 'that', 'this', 'have', 'will', 'would', 'need', 'want',
+    'your', 'their', 'some', 'more', 'also', 'done', 'list', 'step', 'task',
+    'next', 'last', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday',
+    'saturday', 'sunday', 'today', 'tomorrow', 'week', 'month', 'year',
+    'answer', 'answers', 'cover', 'letter', 'items', 'things', 'stuff',
+  ]);
+
+  const isSpecificNoun = (word: string): boolean => {
+    if (word.length <= 4) return false;
+    if (COMMON_VERBS.has(word)) return false;
+    return true;
+  };
+
   const matchingEvent = (userContext.events || []).find((e) => {
     const titleLower = e.title.toLowerCase();
-    return lowerPrompt.includes(titleLower) || titleLower.split(' ').some((word) => word.length > 3 && lowerPrompt.includes(word));
+    if (lowerPrompt.includes(titleLower)) return true;
+    const specificWords = titleLower.split(/\s+/).filter(isSpecificNoun);
+    const matchCount = specificWords.filter((word) => lowerPrompt.includes(word)).length;
+    return matchCount >= 2 || (matchCount === 1 && specificWords.length === 1);
   });
 
   if (matchingEvent) {
     const formattedStart = new Date(matchingEvent.startAt).toLocaleString([], { weekday: 'long', hour: '2-digit', minute: '2-digit' });
+    const now = referenceDateISO ? new Date(referenceDateISO) : new Date();
+    const { startAt, endAt, targetDescription } = parseRescheduleTargetDateTime(
+      prompt,
+      matchingEvent.startAt,
+      matchingEvent.endAt,
+      now
+    );
+
     return {
       intent: 'missing_information',
       confidence: 0.95,
       title: matchingEvent.title,
+      startAt,
+      endAt,
       targetItemId: matchingEvent.id,
       targetItemType: 'event',
       existingItemSummary: `${matchingEvent.title} — ${formattedStart}`,
-      question: `Do you want to move your ${matchingEvent.title} (${formattedStart}) to next week?`,
-      reasoning: 'Parsed reference to matching existing event in user context',
+      question: `Do you want to move your ${matchingEvent.title} (${formattedStart}) to ${targetDescription}?`,
+      reasoning: 'Parsed reference to matching existing event in user context with updated target date/time',
       pendingClarification: {
         intent: 'update_event',
         targetItemId: matchingEvent.id,
         targetItemType: 'event',
+        startAt,
+        endAt,
       },
     };
   }
 
   const matchingTask = (userContext.tasks || []).find((t) => {
     const titleLower = t.title.toLowerCase();
-    return lowerPrompt.includes(titleLower) || titleLower.split(' ').some((word) => word.length > 3 && lowerPrompt.includes(word));
+    if (lowerPrompt.includes(titleLower)) return true;
+    const specificWords = titleLower.split(/\s+/).filter(isSpecificNoun);
+    const matchCount = specificWords.filter((word) => lowerPrompt.includes(word)).length;
+    return matchCount >= 2 || (matchCount === 1 && specificWords.length === 1);
   });
 
   if (matchingTask) {
@@ -151,7 +261,7 @@ Possible Intents:
 Always output ISO 8601 format timestamps for dates/times (e.g., "2026-09-11T15:00:00.000Z").
 `;
 
-  const contextMatch = matchContextItems(prompt, userContext);
+  const contextMatch = matchContextItems(prompt, userContext, referenceDateISO);
   if (contextMatch) {
     return contextMatch;
   }
@@ -397,6 +507,19 @@ async function validateAndSanitizeResult(result: AIInterpretationResult, prompt:
 
   if (result.description) {
     result.description = sanitizeAIText(result.description);
+  }
+
+  const lowerP = prompt.toLowerCase();
+  const hasSeqSteps = /\b(first[,.]?\s+(?:i\s+)?(?:need\s+to|want\s+to|will)?\s*\w+.+(?:then|next|after\s+that|finally)\b|(?:then|next)\b.+(?:then|next|finally)\b)/i.test(lowerP);
+  const hasTravelSignal = /\b(need\s+to\s+travel|travel\s+(?:next|this|in)|trip\s+(?:next|this)|going\s+to\s+travel)\b/i.test(lowerP);
+  if ((hasSeqSteps || hasTravelSignal) && result.intent !== 'create_plan') {
+    let goal = result.title || sanitizeTitle(undefined, prompt);
+    result.intent = 'create_plan';
+    result.goal = goal;
+    result.title = goal;
+    if (!result.possibleActions || result.possibleActions.length === 0) {
+      result.possibleActions = [`Research requirements`, `Prepare resources`, `Execute milestones`, `Verify completion`];
+    }
   }
 
   if (result.intent === 'create_event') {
@@ -724,7 +847,8 @@ async function heuristicFallbackParse(
     }
   }
 
-  const isGoalPhrase = /(prepare for|plan for|plan my|moving to|move to|relocate|trip to|travel to|vacation|project to|organize my|help me prepare|prepare to|need to prepare|need to move|need to buy|want to buy|need to get|want to get|get my|buy a car|buy a house|buy a vehicle|buy an apartment)/i.test(lower);
+  const hasSequentialSteps = /\b(first[,.]?\s+(?:i\s+)?(?:need\s+to|want\s+to|will|i'll)?\s*\w+.+(?:then|next|after\s+that|finally)\b|(?:then|next)\b.+(?:then|next|finally)\b)/i.test(lower);
+  const isGoalPhrase = hasSequentialSteps || /(prepare for|plan for|plan my|moving to|move to|relocate|trip to|travel to|need\s+to\s+travel|travel\s+(?:next|this|in)|going\s+to\s+travel|vacation|project to|organize my|help me prepare|prepare to|need to prepare|need to move|need to buy|want to buy|need to get|want to get|get my|buy a car|buy a house|buy a vehicle|buy an apartment)/i.test(lower);
   const isMinorTask = /^(buy|pick up|clean|call|email|text|send)\s+(milk|groceries|coffee|mom|dad|laundry|friend|doctor|dentist|dish)/i.test(lower);
 
   if (isGoalPhrase && !isMinorTask) {
